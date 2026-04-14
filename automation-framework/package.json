@@ -1,0 +1,29 @@
+{
+  "name": "automation-framework",
+  "version": "1.0.0",
+  "description": "Playwright + Cucumber BDD automation framework for FMT OS and FMT Pro",
+  "type": "module",
+  "scripts": {
+    "test:fmt-os": "cucumber-js --config src/config/cucumber.fmt-os.config.cjs; node src/shared/scripts/slack-reporter.js reports/fmt-os-report.json \"FMT OS\"",
+    "test:fmt-os:smoke": "cucumber-js --config src/config/cucumber.fmt-os.config.cjs --profile smoke; node src/shared/scripts/slack-reporter.js reports/fmt-os-smoke-report.json \"FMT OS Smoke\"",
+    "test:fmt-pro": "cucumber-js --config src/config/cucumber.fmt-pro.config.cjs; node src/shared/scripts/slack-reporter.js reports/fmt-pro-report.json \"FMT Pro\"",
+    "test:fmt-pro:smoke": "cucumber-js --config src/config/cucumber.fmt-pro.config.cjs --profile smoke; node src/shared/scripts/slack-reporter.js reports/fmt-pro-smoke-report.json \"FMT Pro Smoke\"",
+    "test:smoke": "cucumber-js --config src/config/cucumber.all.config.cjs --profile smoke; node src/shared/scripts/slack-reporter.js reports/smoke-report.json \"Smoke Suite\"",
+    "test:regression": "cucumber-js --config src/config/cucumber.all.config.cjs; node src/shared/scripts/slack-reporter.js reports/regression-report.json \"Full Regression\"",
+    "test:wip": "cucumber-js --config src/config/cucumber.all.config.cjs --tags @wip",
+    "report:fmt-os": "open reports/fmt-os-report.html",
+    "report:fmt-pro": "open reports/fmt-pro-report.html",
+    "report:regression": "open reports/regression-report.html",
+    "report:smoke": "open reports/smoke-report.html",
+    "clean:reports": "rm -rf reports/*.html reports/*.json screenshots/*"
+  },
+  "dependencies": {
+    "@cucumber/cucumber": "^11.2.0",
+    "@cucumber/html-formatter": "^21.7.0",
+    "@playwright/test": "^1.51.1",
+    "chai": "^5.2.0",
+    "dotenv": "^16.4.7",
+    "node-fetch": "^3.3.2",
+    "playwright": "^1.51.1"
+  }
+}
