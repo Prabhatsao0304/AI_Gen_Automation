@@ -1,6 +1,11 @@
 import { setWorldConstructor, World } from '@cucumber/cucumber';
 import { chromium, firefox, webkit } from 'playwright';
 import config from '../config/env.config.js';
+import {
+  clickFirstMatching,
+  fillFirstMatching,
+  firstMatchingLocator,
+} from '../shared/locators/fallback-locator.js';
 
 /**
  * Shared browser state — single browser instance for the entire test run.
@@ -12,9 +17,41 @@ export const shared = {
   page: null,
 };
 
+const heal = { logFallback: config.selfHeal.logFallbacks };
+
+const signInButtonStrategies = [
+  { name: 'button_has_text_sign_in', locator: (p) => p.locator('button:has-text("Sign in")') },
+  {
+    name: 'role_button_sign_in_google',
+    locator: (p) => p.getByRole('button', { name: /sign in with google|google.*sign in/i }),
+  },
+  { name: 'role_button_sign_in', locator: (p) => p.getByRole('button', { name: /sign in/i }) },
+];
+
+const identifierNextStrategies = [
+  { name: 'identifierNext', locator: (p) => p.locator('#identifierNext') },
+  { name: 'identifierNext_button', locator: (p) => p.locator('#identifierNext button') },
+  { name: 'next_button', locator: (p) => p.getByRole('button', { name: /^Next$/i }) },
+];
+
+const passwordFieldStrategies = [
+  { name: 'input_passwd', locator: (p) => p.locator('input[name="Passwd"]') },
+  { name: 'input_password', locator: (p) => p.locator('input[type="password"]') },
+];
+
+const passwordNextStrategies = [
+  { name: 'passwordNext_button', locator: (p) => p.locator('#passwordNext button') },
+  { name: 'passwordNext', locator: (p) => p.locator('#passwordNext') },
+  { name: 'next_after_password', locator: (p) => p.getByRole('button', { name: /^Next$/i }) },
+];
+
+const oauthContinueStrategies = [
+  { name: 'button_continue', locator: (p) => p.locator('button:has-text("Continue")') },
+  { name: 'submit_continue', locator: (p) => p.locator('[type="submit"]:has-text("Continue")') },
+];
+
 /**
  * Launches Chrome and completes Google SSO login.
- * Called once before all scenarios via BeforeAll hook.
  */
 export async function launchAndLogin(product) {
   const browserType = { chromium, firefox, webkit }[config.browser.type] || chromium;
@@ -42,15 +79,23 @@ async function performGoogleSSO(baseUrl) {
   const page = shared.page;
   const { username, password } = config.credentials;
 
-  await page.goto(`${baseUrl}/login`, { waitUntil: 'domcontentloaded' });
-  await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
+  const loginUrl = `${baseUrl}/login`;
+  const openLoginPage = async () => {
+    await page.goto(loginUrl, { waitUntil: 'domcontentloaded' });
+    await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
+  };
 
-  await page.waitForSelector('button:has-text("Sign in")', { timeout: 15000 });
-  await page.click('button:has-text("Sign in")');
+  await openLoginPage();
+
+  await clickFirstMatching(page, signInButtonStrategies, {
+    context: 'SSO: Sign in',
+    ...heal,
+    perTryTimeouts: [15000, 10000, 8000],
+    retryRecovery: openLoginPage,
+  });
 
   await page.waitForURL(/accounts\.google\.com/, { timeout: 15000 });
 
-  // Handle account chooser if present
   const url = page.url();
   if (url.includes('accountchooser') || url.includes('ServiceLogin')) {
     const existing = page.locator(`[data-email="${username}"], [data-identifier="${username}"]`).first();
@@ -64,27 +109,48 @@ async function performGoogleSSO(baseUrl) {
     }
   }
 
-  // Enter email
-  const emailInput = page.locator('input[type="email"]');
-  if (await emailInput.isVisible({ timeout: 5000 }).catch(() => false)) {
-    await emailInput.fill(username);
-    await page.locator('#identifierNext, button:has-text("Next")').first().click();
+  const emailStrategies = [
+    { name: 'input_email', locator: (p) => p.locator('input[type="email"]') },
+    { name: 'input_identifier', locator: (p) => p.locator('input[name="identifier"]') },
+  ];
+  try {
+    const { locator: emailField } = await firstMatchingLocator(page, emailStrategies, {
+      context: 'SSO: email field',
+      ...heal,
+      perTryTimeout: 5000,
+    });
+    await emailField.fill(username);
+    await clickFirstMatching(page, identifierNextStrategies, {
+      context: 'SSO: email Next',
+      ...heal,
+      perTryTimeout: 8000,
+    });
     await page.waitForTimeout(1500);
+  } catch {
+    /* already past email (e.g. account chooser went straight to password) */
   }
 
-  // Enter password
-  await page.waitForSelector('input[name="Passwd"], input[type="password"]', { timeout: 15000 });
-  await page.fill('input[name="Passwd"], input[type="password"]', password);
-  await page.locator('#passwordNext button, #passwordNext, button:has-text("Next")').first().click();
+  await fillFirstMatching(page, passwordFieldStrategies, password, {
+    context: 'SSO: password',
+    ...heal,
+    perTryTimeouts: [15000, 12000],
+  });
 
-  // Click Continue on OAuth consent screen
+  await clickFirstMatching(page, passwordNextStrategies, {
+    context: 'SSO: password Next',
+    ...heal,
+    perTryTimeouts: [12000, 10000, 8000],
+  });
+
   await page.waitForURL(/signin\/oauth/, { timeout: 15000 }).catch(() => {});
-  await page.waitForSelector('button:has-text("Continue")', { timeout: 15000 });
-  await page.click('button:has-text("Continue")');
+  await clickFirstMatching(page, oauthContinueStrategies, {
+    context: 'SSO: OAuth Continue',
+    ...heal,
+    perTryTimeouts: [15000, 12000],
+  });
 
-  // Wait for app — use hostname check to avoid false match on Google redirect URLs
   await page.waitForURL(
-    (url) => url.hostname.endsWith('farmartos.com') && !url.pathname.includes('/login'),
+    (u) => u.hostname.endsWith('farmartos.com') && !u.pathname.includes('/login'),
     { timeout: 90000 }
   );
 
@@ -100,22 +166,10 @@ export async function closeSharedBrowser() {
   shared.page = null;
 }
 
-/**
- * CustomWorld — provides shared browser page to every step definition via `this.page`.
- */
 class CustomWorld extends World {
-  constructor(options) {
-    super(options);
-    this.scenarioData = {};
-    this.currentProduct = null;
-  }
-
   get page() { return shared.page; }
   get browser() { return shared.browser; }
   get context() { return shared.context; }
-
-  set(key, value) { this.scenarioData[key] = value; }
-  get(key) { return this.scenarioData[key]; }
 }
 
 setWorldConstructor(CustomWorld);

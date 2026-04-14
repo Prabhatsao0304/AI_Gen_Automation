@@ -7,8 +7,10 @@
  */
 
 import fs from 'fs';
+import path from 'path';
 import fetch from 'node-fetch';
 import dotenv from 'dotenv';
+import { getSelfHealDriftLogPath } from '../locators/fallback-locator.js';
 
 dotenv.config({ path: new URL('../../../.env', import.meta.url).pathname });
 
@@ -23,6 +25,14 @@ if (!WEBHOOK_URL) {
 if (!reportPath || !fs.existsSync(reportPath)) {
   console.error(`Report not found: ${reportPath}`);
   process.exit(1);
+}
+
+function countSelfHealDriftEvents() {
+  const driftPath = getSelfHealDriftLogPath();
+  if (!fs.existsSync(driftPath)) return 0;
+  const raw = fs.readFileSync(driftPath, 'utf8').trim();
+  if (!raw) return 0;
+  return raw.split('\n').filter(Boolean).length;
 }
 
 function parseReport(filePath) {
@@ -68,7 +78,7 @@ function parseReport(filePath) {
   };
 }
 
-function buildPayload(stats, suiteName) {
+function buildPayload(stats, suiteName, selfHealFallbacks) {
   const allPassed = stats.failed === 0;
   const now = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
 
@@ -95,6 +105,19 @@ function buildPayload(stats, suiteName) {
     { type: 'divider' },
   ];
 
+  if (selfHealFallbacks > 0) {
+    const driftRel = path.relative(process.cwd(), getSelfHealDriftLogPath()) || 'self-heal-events.jsonl';
+    blocks.splice(2, 0, {
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text:
+          `*Locator fallbacks (self-heal)*\n⚠️ *${selfHealFallbacks}* secondary locator strateg${selfHealFallbacks === 1 ? 'y' : 'ies'} used during this run. ` +
+          `See \`${driftRel}\` for timestamps, context, and URL.`,
+      },
+    });
+  }
+
   if (stats.failures.length > 0) {
     blocks.push({ type: 'section', text: { type: 'mrkdwn', text: '*❌ Failed Scenarios*' } });
     for (const f of stats.failures) {
@@ -118,10 +141,11 @@ function buildPayload(stats, suiteName) {
 }
 
 const stats = parseReport(reportPath);
+const selfHealFallbacks = countSelfHealDriftEvents();
 const res = await fetch(WEBHOOK_URL, {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify(buildPayload(stats, suiteName)),
+  body: JSON.stringify(buildPayload(stats, suiteName, selfHealFallbacks)),
 });
 
 if (!res.ok) throw new Error(`Slack webhook failed: ${res.status}`);

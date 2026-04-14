@@ -40,6 +40,12 @@ const config = {
     reportDir: process.env.REPORT_DIR || 'reports',
     screenshotDir: process.env.SCREENSHOT_DIR || 'screenshots',
   },
+  selfHeal: {
+    /** Console warnings when a non-primary locator wins. */
+    logFallbacks: process.env.SELF_HEAL_LOG === 'true',
+    /** Append JSON lines to reports/self-heal-events.jsonl (truncated at each run). Set SELF_HEAL_DRIFT_LOG=false to disable. */
+    driftLogEnabled: process.env.SELF_HEAL_DRIFT_LOG !== 'false',
+  },
 };
 
 export default config;

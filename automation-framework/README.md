@@ -11,7 +11,7 @@ Playwright + Cucumber BDD framework for automating **FMT OS** (web) and **FMT Pr
 | Language | JavaScript (ES Modules) |
 | Browser automation | Playwright |
 | Test runner / BDD | Cucumber JS |
-| Reports | `@cucumber/html-formatter` |
+| Reports | Cucumber HTML + JSON formatters (via `@cucumber/cucumber`) |
 | Environment | `dotenv` |
 | Slack (optional) | Incoming webhook + `node-fetch` |
 
@@ -173,12 +173,8 @@ automation-framework/
 │   ├── shared/
 │   │   ├── pages/
 │   │   │   └── base.page.js
-│   │   ├── scripts/
-│   │   │   └── slack-reporter.js    # JSON report → Slack
-│   │   └── utils/
-│   │       ├── wait.utils.js
-│   │       ├── string.utils.js
-│   │       └── date.utils.js
+│   │   └── scripts/
+│   │       └── slack-reporter.js    # JSON report → Slack
 │   │
 │   └── products/
 │       ├── fmt-os/
