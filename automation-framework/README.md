@@ -4,113 +4,224 @@ Playwright + Cucumber BDD framework for automating **FMT OS** (web) and **FMT Pr
 
 ---
 
-## Tech Stack
+## Tech stack
 
 | Layer | Tool |
 |-------|------|
 | Language | JavaScript (ES Modules) |
-| Browser Automation | Playwright |
-| Test Runner / BDD | Cucumber JS |
-| Reports | @cucumber/html-formatter |
-| Env Management | dotenv |
+| Browser automation | Playwright |
+| Test runner / BDD | Cucumber JS |
+| Reports | `@cucumber/html-formatter` |
+| Environment | `dotenv` |
+| Slack (optional) | Incoming webhook + `node-fetch` |
+
+**Recommended:** Node.js **18 LTS** or **20 LTS** (anything that supports native `fetch` / ESM is fine).
 
 ---
 
-## Project Structure
+## Getting started — full setup (new user)
 
-```
-automation-framework/
-│
-├── rulesets/                        # PM requirement → structured ruleset (source of truth)
-│   └── fmt-os/
-│       ├── purchase-order.md        # Human-readable breakdown
-│       └── purchase-order.json      # Machine-readable breakdown
-│
-├── src/
-│   ├── config/
-│   │   ├── env.config.js            # Reads .env, exports config object
-│   │   ├── cucumber.fmt-os.config.cjs
-│   │   ├── cucumber.fmt-pro.config.cjs
-│   │   └── cucumber.all.config.cjs
-│   │
-│   ├── hooks/
-│   │   ├── world.js                 # Cucumber World: browser + page context
-│   │   └── before-after.hooks.js    # Browser launch, session check, screenshot on fail
-│   │
-│   ├── shared/
-│   │   ├── pages/
-│   │   │   └── base.page.js         # Base class for all Page Objects
-│   │   └── utils/
-│   │       ├── wait.utils.js        # waitForVisible, waitForNetworkIdle, retry
-│   │       ├── string.utils.js      # randomString, normalise, generateTestEmail
-│   │       └── date.utils.js        # todayISO, offsetDate, formatDDMMYYYY
-│   │
-│   └── products/
-│       ├── fmt-os/
-│       │   ├── features/            # Gherkin .feature files
-│       │   ├── step-definitions/    # Step implementations
-│       │   └── pages/               # FMT OS Page Objects
-│       └── fmt-pro/
-│           ├── features/
-│           ├── step-definitions/
-│           └── pages/
-│
-├── reports/                         # Auto-generated HTML + JSON (gitignored)
-├── screenshots/                     # Failure screenshots (gitignored)
-├── .env                             # Local env vars (gitignored)
-├── .env.example                     # Template for .env
-└── package.json
-```
+Follow these steps in order on a clean machine. Commands assume a terminal (Terminal.app, iTerm, VS Code integrated terminal, etc.).
 
----
+### Step 1 — Install prerequisites
 
-## First-Time Setup
+1. **Git** — [Install Git](https://git-scm.com/downloads) if you do not already have it.
+2. **Node.js + npm** — Install from [nodejs.org](https://nodejs.org/) (LTS). After install, verify:
 
-### 1. Install dependencies
+   ```bash
+   node -v
+   npm -v
+   ```
+
+3. **Google Chrome (stable)** — Required for the current login flow. The framework launches **system Chrome** (not only Playwright’s bundled browser) so **Google SSO** works reliably.
+
+4. **Operating system** — The default Chrome path in code is **macOS**. If you are on Windows or Linux, you must change `executablePath` in `src/hooks/world.js` to your Chrome / Chromium binary (see [Troubleshooting](#troubleshooting)).
+
+### Step 2 — Get the repository on your machine
+
+**Option A — Clone with Git**
 
 ```bash
-cd automation-framework
+cd ~/Desktop
+git clone <YOUR_REPO_URL> AI_Gen_Automation
+cd AI_Gen_Automation/automation-framework
+```
+
+**Option B — You already have the folder**
+
+If the project is already on disk (for example after a zip download), go to the framework folder. Example path on macOS:
+
+```bash
+cd /Users/<YOUR_USERNAME>/Desktop/AI_Gen_Automation/automation-framework
+```
+
+Replace `<YOUR_USERNAME>` with your macOS account name. You can drag the `automation-framework` folder into the terminal to paste the full path after `cd `.
+
+Confirm you are in the right place:
+
+```bash
+pwd
+ls package.json
+```
+
+You should see `package.json` in the listing.
+
+### Step 3 — Install Node dependencies
+
+From the `automation-framework` directory:
+
+```bash
 npm install
 ```
 
-### 2. Configure environment
+This installs Playwright, Cucumber, dotenv, and the rest of the dependencies listed in `package.json`.
+
+### Step 4 — Install Playwright browsers (recommended)
+
+Even though login uses **Google Chrome** from Applications, installing Playwright’s browser binaries avoids surprises and matches Playwright’s supported versions:
+
+```bash
+npx playwright install chromium
+```
+
+If the download is blocked on your network, run the same command on a network that allows access to Playwright’s CDN, or ask your IT team to allow it.
+
+### Step 5 — Create your local environment file
 
 ```bash
 cp .env.example .env
 ```
 
-Edit `.env` with your app URLs and credentials (see `.env.example` for all variables).
+Then open `.env` in your editor and set at least:
 
-### 3. That's it — login is automatic
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `FMT_OS_URL` | Yes | Base URL of FMT OS (no `/login` suffix). Example: `https://your-env.preview.farmartos.com` |
+| `FMT_PRO_URL` | Yes | Base URL of FMT Pro |
+| `USERNAME` | Yes | Google account email used for SSO |
+| `PASSWORD` | Yes | Account password |
+| `SLACK_WEBHOOK_URL` | Yes for default scripts | Slack incoming webhook; after each run the reporter posts results. Without it, `npm run test:*` may still run tests but the Slack step will fail. |
+| `HEADLESS` | No | `true` / `false` — Google SSO is easiest with `false` |
+| `BROWSER` | No | `chromium` (default), `firefox`, or `webkit` — launch still uses `executablePath` to Chrome on macOS as configured in `world.js` |
 
-Every test scenario opens Chrome, logs into the app via Google SSO using the credentials in `.env`, then runs the test — all in the same browser session. No saved sessions, no expiry issues.
+Do **not** commit `.env`; it stays local (see `.gitignore`).
 
----
+### Step 6 — Run the tests
 
-## Running Tests
+From `automation-framework`:
+
+```bash
+npm run test:fmt-os
+```
+
+What this does:
+
+1. Starts **one** browser session and logs in **once** (Google SSO) before all scenarios.
+2. Runs all FMT OS Cucumber scenarios.
+3. Writes reports under `reports/` (HTML + JSON).
+4. Sends a summary to Slack using `SLACK_WEBHOOK_URL`.
+
+Other useful commands:
 
 | Command | What it runs |
-|---------|--------------|
-| `npm run test:fmt-os` | All FMT OS tests |
-| `npm run test:fmt-os:smoke` | FMT OS smoke tests only |
-| `npm run test:fmt-pro` | All FMT Pro tests |
-| `npm run test:regression` | Full suite across both products |
-| `npm run test:wip` | Scenarios tagged `@wip` |
-| `npm run clean:reports` | Delete all reports and screenshots |
+|---------|----------------|
+| `npm run test:fmt-os` | All FMT OS tests + Slack report |
+| `npm run test:fmt-os:smoke` | FMT OS smoke profile + Slack |
+| `npm run test:fmt-pro` | FMT Pro + Slack |
+| `npm run test:smoke` | Smoke across products + Slack |
+| `npm run test:regression` | Full suite + Slack |
+| `npm run test:wip` | Only `@wip` tags (no Slack in script) |
+| `npm run clean:reports` | Deletes generated HTML/JSON under `reports/` and files under `screenshots/` |
+
+Open the HTML report after a run (macOS):
+
+```bash
+npm run report:fmt-os
+```
+
+On Linux you can open the file manually, for example:
+
+```bash
+xdg-open reports/fmt-os-report.html
+```
+
+On Windows, open `reports\fmt-os-report.html` in a browser from Explorer.
 
 ---
 
-## Adding a New Feature
+## Project structure
+
+```
+automation-framework/
+│
+├── rulesets/                        # PM requirement → ruleset (design / flow / logic)
+│   └── fmt-os/
+│       ├── purchase-order.md
+│       └── purchase-order.json
+│
+├── src/
+│   ├── config/
+│   │   ├── env.config.js            # Loads .env, exports config
+│   │   ├── cucumber.fmt-os.config.cjs
+│   │   ├── cucumber.fmt-pro.config.cjs
+│   │   └── cucumber.all.config.cjs
+│   │
+│   ├── hooks/
+│   │   ├── world.js                 # Shared browser + Google SSO login
+│   │   └── before-after.hooks.js    # BeforeAll login once, screenshots on failure
+│   │
+│   ├── shared/
+│   │   ├── pages/
+│   │   │   └── base.page.js
+│   │   ├── scripts/
+│   │   │   └── slack-reporter.js    # JSON report → Slack
+│   │   └── utils/
+│   │       ├── wait.utils.js
+│   │       ├── string.utils.js
+│   │       └── date.utils.js
+│   │
+│   └── products/
+│       ├── fmt-os/
+│       │   ├── features/
+│       │   ├── step-definitions/
+│       │   └── pages/
+│       └── fmt-pro/
+│           ├── features/
+│           ├── step-definitions/
+│           └── pages/
+│
+├── reports/                         # Generated (gitignored)
+├── screenshots/                     # Failure screenshots (gitignored)
+├── .env                             # Local only (gitignored)
+├── .env.example
+└── package.json
+```
+
+---
+
+## Troubleshooting
+
+| Problem | What to try |
+|---------|-------------|
+| `Missing SLACK_WEBHOOK_URL in .env` | Add a valid `SLACK_WEBHOOK_URL` to `.env`, or temporarily point it to a test webhook. The npm scripts always invoke the reporter after Cucumber. |
+| `Missing required environment variable` | Ensure `FMT_OS_URL`, `FMT_PRO_URL`, `USERNAME`, and `PASSWORD` are set in `.env`. |
+| Browser does not start / wrong Chrome | On macOS the code expects Chrome at `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`. On Windows/Linux, set `executablePath` in `src/hooks/world.js` to your Chrome path. |
+| Google login times out | Use `HEADLESS=false`, run on a stable network, and complete any account prompts manually once if your org requires 2FA (automation may need an app-specific flow for 2FA). |
+| Playwright install fails | Run `npx playwright install chromium` with network access allowed; use a VPN or corporate proxy as required. |
+
+---
+
+## Adding a new feature
 
 When a PM requirement arrives:
 
-**1. Create the Ruleset** — paste the requirement and let AI generate:
-- `rulesets/<product>/<feature>.md` (human-readable)
-- `rulesets/<product>/<feature>.json` (machine-readable)
+1. **Ruleset** — Add `rulesets/<product>/<feature>.md` and `.json`.
+2. **Feature file** — `src/products/<product>/features/<feature>.feature`
+3. **Page object** — `src/products/<product>/pages/<feature>.page.js` (extend `BasePage`, keep selectors grouped).
+4. **Steps** — `src/products/<product>/step-definitions/<feature>.steps.js`
 
-**2. Create the Feature File** — `src/products/<product>/features/<feature>.feature`
+Tag scenarios with product and priority, for example:
 
-Tag every scenario with its product and priority:
 ```gherkin
 @fmt-os @smoke
 Scenario: Short description
@@ -119,20 +230,14 @@ Scenario: Short description
   Then ...
 ```
 
-**3. Create the Page Object** — `src/products/<product>/pages/<feature>.page.js`
-
-Extend `BasePage`, keep all selectors in a `selectors` object at the top.
-
-**4. Create Step Definitions** — `src/products/<product>/step-definitions/<feature>.steps.js`
-
 ---
 
-## Tagging Strategy
+## Tagging strategy
 
 | Tag | Meaning |
 |-----|---------|
-| `@fmt-os` | FMT OS product |
-| `@fmt-pro` | FMT Pro product |
-| `@smoke` | Critical, fast — run on every deploy |
+| `@fmt-os` | FMT OS |
+| `@fmt-pro` | FMT Pro |
+| `@smoke` | Fast critical path |
 | `@regression` | Full regression |
-| `@wip` | In-progress — excluded from CI |
+| `@wip` | Work in progress |
