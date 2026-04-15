@@ -1,4 +1,4 @@
-import { BeforeAll, AfterAll, Before, After, AfterStep, Status, setDefaultTimeout } from '@cucumber/cucumber';
+import { BeforeAll, AfterAll, After, AfterStep, Status, setDefaultTimeout } from '@cucumber/cucumber';
 import fs from 'fs';
 import path from 'path';
 import config from '../config/env.config.js';
@@ -26,21 +26,6 @@ BeforeAll(async function () {
  */
 AfterAll(async function () {
   await closeSharedBrowser();
-});
-
-/**
- * Runs before every scenario.
- * Browser is already open and logged in — just set the product tag.
- */
-Before(async function (scenario) {
-  this.scenarioData = {};
-
-  const tags = scenario.pickle.tags.map((t) => t.name);
-  if (tags.includes('@fmt-os')) {
-    this.currentProduct = 'fmt-os';
-  } else if (tags.includes('@fmt-pro')) {
-    this.currentProduct = 'fmt-pro';
-  }
 });
 
 /**

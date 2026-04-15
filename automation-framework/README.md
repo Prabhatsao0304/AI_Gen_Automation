@@ -157,7 +157,18 @@ automation-framework/
 ├── rulesets/                        # PM requirement → ruleset (design / flow / logic)
 │   └── fmt-os/
 │       ├── purchase-order.md
-│       └── purchase-order.json
+│       ├── purchase-order.json
+│       ├── purchase-order-search.md
+│       └── purchase-order-search.json
+│
+├── templates/                       # Copy-ready templates for new ruleset-driven features
+│   └── new-feature/
+│       ├── README.md
+│       ├── feature.template.feature
+│       ├── page.template.js
+│       ├── ruleset.template.json
+│       ├── ruleset.template.md
+│       └── steps.template.js
 │
 ├── src/
 │   ├── config/
@@ -215,10 +226,39 @@ automation-framework/
 
 When a PM requirement arrives:
 
-1. **Ruleset** — Add `rulesets/<product>/<feature>.md` and `.json`.
-2. **Feature file** — `src/products/<product>/features/<feature>.feature`
-3. **Page object** — `src/products/<product>/pages/<feature>.page.js` (extend `BasePage`, keep selectors grouped).
-4. **Steps** — `src/products/<product>/step-definitions/<feature>.steps.js`
+1. **Start from the requirement** and choose one kebab-case feature slug.
+2. **Write the ruleset first** at `rulesets/<product>/<feature-slug>.md` and `rulesets/<product>/<feature-slug>.json`.
+3. **Create the automation only after the ruleset is ready** using the same feature slug:
+   `src/products/<product>/features/<feature-slug>.feature`
+   `src/products/<product>/pages/<feature-slug>.page.js`
+   `src/products/<product>/step-definitions/<feature-slug>.steps.js`
+4. **Keep naming identical across all files** so requirement, automation, and reports are easy to trace.
+5. **Use the starter files in `templates/new-feature/`** to keep structure and wording consistent.
+
+Example:
+
+```text
+rulesets/fmt-os/purchase-order-search.md
+rulesets/fmt-os/purchase-order-search.json
+src/products/fmt-os/features/purchase-order-search.feature
+src/products/fmt-os/pages/purchase-order-search.page.js
+src/products/fmt-os/step-definitions/purchase-order-search.steps.js
+```
+
+### Ruleset-First Workflow
+
+1. Capture the requirement in the ruleset `.md`.
+2. Mirror the same requirement structure in the ruleset `.json`.
+3. Create or update automation code only for that same feature slug.
+4. Run a dry run first.
+5. Run the tagged automation suite.
+
+Suggested validation commands:
+
+```bash
+npx cucumber-js --dry-run --config src/config/cucumber.fmt-os.config.cjs --tags @smoke
+npm run test:fmt-os
+```
 
 Tag scenarios with product and priority, for example:
 

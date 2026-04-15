@@ -23,7 +23,11 @@ export async function launchAndLogin(product) {
     headless: config.browser.headless,
     slowMo: config.browser.headless ? 0 : 50,
     executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-    args: ['--no-first-run', '--no-default-browser-check'],
+    args: [
+      '--no-first-run',
+      '--no-default-browser-check',
+      '--disable-blink-features=AutomationControlled',
+    ],
   });
 
   shared.context = await shared.browser.newContext({
@@ -106,16 +110,11 @@ export async function closeSharedBrowser() {
 class CustomWorld extends World {
   constructor(options) {
     super(options);
-    this.scenarioData = {};
-    this.currentProduct = null;
   }
 
   get page() { return shared.page; }
   get browser() { return shared.browser; }
   get context() { return shared.context; }
-
-  set(key, value) { this.scenarioData[key] = value; }
-  get(key) { return this.scenarioData[key]; }
 }
 
 setWorldConstructor(CustomWorld);
