@@ -1,10 +1,13 @@
 /**
  * Deterministic self-heal: ordered locator strategies, scroll, wait state, one chain retry, drift log.
+ * Integrates with selector-intelligence.js for reporting and optional cache reorder.
  */
 
 import fs from 'fs';
 import path from 'path';
 import config from '../../config/env.config.js';
+import { reorderStrategies, recordSelectorResolution } from './selector-intelligence.js';
+import { buildCdpRecoveryStrategies } from './cdp-recovery.js';
 
 /**
  * @typedef {{ name?: string, locator: (page: import('playwright').Page) => import('playwright').Locator }} LocatorStrategy
@@ -72,11 +75,20 @@ export async function firstMatchingLocator(page, strategies, options = {}) {
     throw new Error(`[self-heal] ${context}: no strategies provided`);
   }
 
-  const attemptChain = async () => {
+  const originalPrimaryName = strategies[0]?.name || 'strategy_0';
+  const { ordered, reorderedFromCache } = reorderStrategies(context, strategies);
+  const baseLen = ordered.length;
+
+  /**
+   * @param {typeof ordered} list
+   * @param {number} indexOffset global index of list[0] in the combined strategy list
+   */
+  const attemptChain = async (list, indexOffset = 0) => {
     let lastError;
-    for (let i = 0; i < strategies.length; i++) {
-      const { name = `strategy_${i}`, locator } = strategies[i];
-      const timeout = perTryTimeouts?.[i] ?? perTryTimeout;
+    for (let i = 0; i < list.length; i++) {
+      const globalIdx = indexOffset + i;
+      const { name = `strategy_${globalIdx}`, locator } = list[i];
+      const timeout = perTryTimeouts?.[globalIdx] ?? perTryTimeout;
       const loc = locator(page).first();
 
       try {
@@ -85,15 +97,29 @@ export async function firstMatchingLocator(page, strategies, options = {}) {
         }
         await loc.waitFor({ state: waitState, timeout });
 
-        if (i > 0) {
+        if (globalIdx > 0) {
           if (logFallback) {
-            console.warn(
-              `[self-heal] ${context}: primary failed — using fallback "${name}" (${i}/${strategies.length - 1})`
-            );
+            const tag = indexOffset >= baseLen ? '[cdp-recovery]' : '[self-heal]';
+            console.warn(`${tag} ${context}: primary failed — using "${name}" (index ${globalIdx})`);
           }
-          recordFallbackDrift(page, context, name, i);
+          recordFallbackDrift(page, context, name, globalIdx);
         }
-        return { locator: loc, usedIndex: i, usedName: name };
+
+        const shouldIntelRecord = globalIdx > 0 || reorderedFromCache;
+        if (shouldIntelRecord) {
+          recordSelectorResolution({
+            context,
+            originalPrimaryStrategy: originalPrimaryName,
+            resolvedStrategy: name,
+            resolvedIndex: globalIdx,
+            fallbackUsed: globalIdx > 0,
+            reorderedFromCache,
+            url: page.url(),
+            continued: true,
+          });
+        }
+
+        return { locator: loc, usedIndex: globalIdx, usedName: name };
       } catch (err) {
         lastError = err;
       }
@@ -101,12 +127,28 @@ export async function firstMatchingLocator(page, strategies, options = {}) {
     throw lastError ?? new Error(`[self-heal] ${context}: no locator strategy matched`);
   };
 
+  const tryCdpRecovery = async (lastError) => {
+    if (!config.runtimeCdpRecovery?.enabled) throw lastError;
+    const extra = await buildCdpRecoveryStrategies(page, context);
+    if (!extra.length) throw lastError;
+    if (logFallback) {
+      console.warn(`[cdp-recovery] ${context}: trying ${extra.length} AX-derived locator(s)`);
+    }
+    return await attemptChain(extra, baseLen);
+  };
+
   try {
-    return await attemptChain();
+    return await attemptChain(ordered, 0);
   } catch (firstFailure) {
-    if (!retryRecovery) throw firstFailure;
-    await retryRecovery();
-    return await attemptChain();
+    if (retryRecovery) {
+      await retryRecovery();
+      try {
+        return await attemptChain(ordered, 0);
+      } catch (secondFailure) {
+        return await tryCdpRecovery(secondFailure);
+      }
+    }
+    return await tryCdpRecovery(firstFailure);
   }
 }
 

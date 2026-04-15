@@ -14,8 +14,11 @@ Playwright + Cucumber BDD framework for automating **FMT OS** (web) and **FMT Pr
 | Reports | Cucumber HTML + JSON formatters (via `@cucumber/cucumber`) |
 | Environment | `dotenv` |
 | Slack (optional) | Incoming webhook + `node-fetch` |
+| IDE debugging (optional) | Use Playwright tracing/screenshots or browser devtools manually |
 
-**Recommended:** Node.js **18 LTS** or **20 LTS** (anything that supports native `fetch` / ESM is fine).
+**Recommended:** Node.js **18 LTS** or **20 LTS**.
+
+**Failure reports:** the Cucumber **HTML** report attaches an *Automation debug context* block (URL, self-heal summary).
 
 ---
 
@@ -118,20 +121,21 @@ What this does:
 
 1. Starts **one** browser session and logs in **once** (Google SSO) before all scenarios.
 2. Runs all FMT OS Cucumber scenarios.
-3. Writes reports under `reports/` (HTML + JSON).
-4. Sends a summary to Slack using `SLACK_WEBHOOK_URL`.
+3. Uses the **full locator stack** for every step: ordered strategies → self-heal fallbacks → optional page `retryRecovery` where coded → **CDP / accessibility recovery** (on by default; set `RUNTIME_CDP_RECOVERY=false` in `.env` only if you need to disable it). Selector cache + JSON/Markdown reports run unless turned off with `SELECTOR_*` env vars.
+4. Writes reports under `reports/` (HTML + JSON).
+5. Sends a summary to Slack using `SLACK_WEBHOOK_URL`.
 
 Other useful commands:
 
 | Command | What it runs |
 |---------|----------------|
-| `npm run test:fmt-os` | All FMT OS tests + Slack report |
+| `npm run test:fmt-os` | All FMT OS tests (full self-heal + CDP recovery by default) + Slack report |
 | `npm run test:fmt-os:smoke` | FMT OS smoke profile + Slack |
 | `npm run test:fmt-pro` | FMT Pro + Slack |
 | `npm run test:smoke` | Smoke across products + Slack |
 | `npm run test:regression` | Full suite + Slack |
 | `npm run test:wip` | Only `@wip` tags (no Slack in script) |
-| `npm run clean:reports` | Deletes generated HTML/JSON under `reports/` and files under `screenshots/` |
+| `npm run clean:reports` | Deletes generated HTML/JSON/JSONL under `reports/` |
 
 Open the HTML report after a run (macOS):
 
@@ -147,6 +151,14 @@ xdg-open reports/fmt-os-report.html
 
 On Windows, open `reports\fmt-os-report.html` in a browser from Explorer.
 
+### Cucumber: one config, many products
+
+All suites use **`src/config/cucumber.config.cjs`**. Products are listed in the **`PRODUCTS`** array (folder name under `src/products/<id>/`). Each product expects `features/**/*.feature` and `step-definitions/**/*.js`.
+
+**Profiles:** `fmt-os`, `fmt-os-smoke`, `fmt-pro`, `fmt-pro-smoke`, `all` (full regression), `all-smoke`, `wip`. Omitting `--profile` runs the same as **`all`** (default).
+
+**Add a new product:** (1) Add `{ id: 'your-product-id' }` to `PRODUCTS`, (2) create `src/products/your-product-id/features/` and `step-definitions/`, (3) add `npm` scripts that call `cucumber-js --config src/config/cucumber.config.cjs --profile your-product-id` and point Slack at the matching `reports/<slug>-report.json` name.
+
 ---
 
 ## Project structure
@@ -157,18 +169,16 @@ automation-framework/
 ├── rulesets/                        # PM requirement → ruleset (design / flow / logic)
 │   └── fmt-os/
 │       ├── purchase-order.md
-│       └── purchase-order.json
+│       └── (md only)
 │
 ├── src/
 │   ├── config/
 │   │   ├── env.config.js            # Loads .env, exports config
-│   │   ├── cucumber.fmt-os.config.cjs
-│   │   ├── cucumber.fmt-pro.config.cjs
-│   │   └── cucumber.all.config.cjs
+│   │   └── cucumber.config.cjs      # Cucumber: products, profiles, reports
 │   │
 │   ├── hooks/
 │   │   ├── world.js                 # Shared browser + Google SSO login
-│   │   └── before-after.hooks.js    # BeforeAll login once, screenshots on failure
+│   │   └── before-after.hooks.js    # BeforeAll login once, AfterAll teardown
 │   │
 │   ├── shared/
 │   │   ├── pages/
@@ -187,7 +197,6 @@ automation-framework/
 │           └── pages/
 │
 ├── reports/                         # Generated (gitignored)
-├── screenshots/                     # Failure screenshots (gitignored)
 ├── .env                             # Local only (gitignored)
 ├── .env.example
 └── package.json
@@ -211,9 +220,9 @@ automation-framework/
 
 When a PM requirement arrives:
 
-1. **Ruleset** — Add `rulesets/<product>/<feature>.md` and `.json`.
+1. **Ruleset (MD only)** — Add `rulesets/<product>/<feature>.md`.
 2. **Feature file** — `src/products/<product>/features/<feature>.feature`
-3. **Page object** — `src/products/<product>/pages/<feature>.page.js` (extend `BasePage`, keep selectors grouped).
+3. **Page object** — `src/products/<product>/pages/<feature>.page.js` (keep selectors grouped).
 4. **Steps** — `src/products/<product>/step-definitions/<feature>.steps.js`
 
 Tag scenarios with product and priority, for example:

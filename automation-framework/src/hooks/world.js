@@ -51,17 +51,22 @@ const oauthContinueStrategies = [
 ];
 
 /**
- * Launches Chrome and completes Google SSO login.
+ * @param {{ useBundledChromium?: boolean }} [options] If true, omit system Chrome path (Playwright Chromium — better for CI / CDP smoke).
  */
-export async function launchAndLogin(product) {
+async function createSharedBrowserContextPage(options = {}) {
+  const { useBundledChromium = false } = options;
   const browserType = { chromium, firefox, webkit }[config.browser.type] || chromium;
 
-  shared.browser = await browserType.launch({
+  const launchOpts = {
     headless: config.browser.headless,
     slowMo: config.browser.headless ? 0 : 50,
-    executablePath: '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
     args: ['--no-first-run', '--no-default-browser-check'],
-  });
+  };
+  if (!useBundledChromium) {
+    launchOpts.executablePath = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+  }
+
+  shared.browser = await browserType.launch(launchOpts);
 
   shared.context = await shared.browser.newContext({
     viewport: { width: 1366, height: 768 },
@@ -71,8 +76,19 @@ export async function launchAndLogin(product) {
   shared.context.setDefaultTimeout(config.timeouts.default);
   shared.context.setDefaultNavigationTimeout(config.timeouts.navigation);
   shared.page = await shared.context.newPage();
+}
 
+/**
+ * Launches Chrome and completes Google SSO login.
+ */
+export async function launchAndLogin(product) {
+  await createSharedBrowserContextPage();
   await performGoogleSSO(config.products[product].baseUrl);
+}
+
+/** Same browser setup as login flow, without navigating (for CDP smoke test). Uses bundled Chromium. */
+export async function launchBrowserWithoutLogin() {
+  await createSharedBrowserContextPage({ useBundledChromium: true });
 }
 
 async function performGoogleSSO(baseUrl) {
@@ -82,7 +98,6 @@ async function performGoogleSSO(baseUrl) {
   const loginUrl = `${baseUrl}/login`;
   const openLoginPage = async () => {
     await page.goto(loginUrl, { waitUntil: 'domcontentloaded' });
-    await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
   };
 
   await openLoginPage();
@@ -125,7 +140,15 @@ async function performGoogleSSO(baseUrl) {
       ...heal,
       perTryTimeout: 8000,
     });
-    await page.waitForTimeout(1500);
+    // Avoid hard sleeps; wait until password UI is ready (or proceed if Google fast-paths).
+    await Promise.race([
+      page
+        .locator('input[name="Passwd"], input[type="password"]')
+        .first()
+        .waitFor({ state: 'visible', timeout: 8000 })
+        .catch(() => {}),
+      page.waitForURL(/challenge\/pwd|signin\/v2\/challenge\/pwd/i, { timeout: 8000 }).catch(() => {}),
+    ]);
   } catch {
     /* already past email (e.g. account chooser went straight to password) */
   }
@@ -153,8 +176,6 @@ async function performGoogleSSO(baseUrl) {
     (u) => u.hostname.endsWith('farmartos.com') && !u.pathname.includes('/login'),
     { timeout: 90000 }
   );
-
-  await page.waitForLoadState('networkidle', { timeout: 30000 }).catch(() => {});
 }
 
 export async function closeSharedBrowser() {
@@ -167,9 +188,9 @@ export async function closeSharedBrowser() {
 }
 
 class CustomWorld extends World {
-  get page() { return shared.page; }
-  get browser() { return shared.browser; }
-  get context() { return shared.context; }
+  get page() {
+    return shared.page;
+  }
 }
 
 setWorldConstructor(CustomWorld);

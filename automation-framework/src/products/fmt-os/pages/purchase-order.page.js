@@ -1,4 +1,3 @@
-import { BasePage } from '../../../shared/pages/base.page.js';
 import config from '../../../config/env.config.js';
 import {
   firstMatchingLocator,
@@ -7,9 +6,9 @@ import {
   escapeForRegExp,
 } from '../../../shared/locators/fallback-locator.js';
 
-export class PurchaseOrderPage extends BasePage {
+export class PurchaseOrderPage {
   constructor(page) {
-    super(page);
+    this.page = page;
 
     this.url = `${config.products['fmt-os'].baseUrl}/procurement/purchase-order`;
 
@@ -91,7 +90,21 @@ export class PurchaseOrderPage extends BasePage {
       },
     });
     await this.page.keyboard.press('Enter');
-    await this.page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
+    // Avoid blanket network-idle waits; wait for either empty-state copy or some results container to appear.
+    await Promise.race([
+      firstMatchingLocator(
+        this.page,
+        [
+          { name: 'empty_review', locator: (p) => p.getByText('No purchase orders to review', { exact: false }) },
+          { name: 'empty_map', locator: (p) => p.getByText('No purchase orders to map', { exact: false }) },
+          { name: 'empty_in_progress', locator: (p) => p.getByText('No purchase orders in progress', { exact: false }) },
+          { name: 'empty_completed', locator: (p) => p.getByText('No completed purchase orders', { exact: false }) },
+          { name: 'empty_all', locator: (p) => p.getByText('No purchase orders found', { exact: false }) },
+        ],
+        { context: 'PO: search result empty state', logFallback: this._healLog, perTryTimeout: 6000 }
+      ).catch(() => null),
+      this.page.locator('table, [role="table"], [data-testid*="table"]').first().waitFor({ state: 'attached', timeout: 6000 }).catch(() => {}),
+    ]);
   }
 
   async assertTabActive(tabName) {

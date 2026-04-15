@@ -38,13 +38,30 @@ const config = {
   },
   reporting: {
     reportDir: process.env.REPORT_DIR || 'reports',
-    screenshotDir: process.env.SCREENSHOT_DIR || 'screenshots',
   },
   selfHeal: {
     /** Console warnings when a non-primary locator wins. */
     logFallbacks: process.env.SELF_HEAL_LOG === 'true',
     /** Append JSON lines to reports/self-heal-events.jsonl (truncated at each run). Set SELF_HEAL_DRIFT_LOG=false to disable. */
     driftLogEnabled: process.env.SELF_HEAL_DRIFT_LOG !== 'false',
+  },
+  /**
+   * Learn preferred strategy name after a successful fallback; reorder next run.
+   * Report: reports/selector-resolution-report.json + selector-intelligence-summary.md
+   */
+  selectorIntelligence: {
+    cacheEnabled: process.env.SELECTOR_CACHE !== 'false',
+    reportEnabled: process.env.SELECTOR_REPORT !== 'false',
+  },
+  /**
+   * CDP / AX recovery after scripted strategies (+ optional retryRecovery) fail.
+   * Default **on** so `npm run test:fmt-os` runs the full locator pipeline without extra env.
+   * Set RUNTIME_CDP_RECOVERY=false to disable.
+   */
+  runtimeCdpRecovery: {
+    enabled: process.env.RUNTIME_CDP_RECOVERY !== 'false',
+    maxExtraStrategies: parseInt(process.env.CDP_RECOVERY_MAX_STRATEGIES || '8', 10),
+    writeDebugArtifact: process.env.CDP_RECOVERY_DEBUG === 'true',
   },
 };
 
