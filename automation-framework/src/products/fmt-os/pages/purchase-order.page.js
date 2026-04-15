@@ -11,6 +11,7 @@ export class PurchaseOrderPage {
     this.page = page;
 
     this.url = `${config.products['fmt-os'].baseUrl}/procurement/purchase-order`;
+    this.tabs = ['Review PO', 'Map SO', 'In Progress', 'Completed', 'All'];
 
     this._healLog = config.selfHeal.logFallbacks;
   }
@@ -107,6 +108,26 @@ export class PurchaseOrderPage {
     ]);
   }
 
+  async clearSearch() {
+    const { locator } = await firstMatchingLocator(this.page, this._searchStrategies(), {
+      context: 'PO: clear search input',
+      logFallback: this._healLog,
+      perTryTimeout: 5000,
+    });
+    await locator.fill('');
+    await this.page.keyboard.press('Enter');
+    await this.page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
+  }
+
+  async clickTab(tabName) {
+    await clickFirstMatching(this.page, this._tabStrategies(tabName), {
+      context: `PO: open tab "${tabName}"`,
+      logFallback: this._healLog,
+      perTryTimeout: 5000,
+    });
+    await this.page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
+  }
+
   async assertTabActive(tabName) {
     const { locator } = await firstMatchingLocator(this.page, this._tabStrategies(tabName), {
       context: `PO: tab "${tabName}"`,
@@ -117,6 +138,56 @@ export class PurchaseOrderPage {
     const classes = (await locator.getAttribute('class')) || '';
     if (ariaSelected !== 'true' && !classes.includes('Mui-selected')) {
       throw new Error(`Expected tab "${tabName}" to be active`);
+    }
+  }
+
+  async assertSearchBarVisible() {
+    const { locator } = await firstMatchingLocator(this.page, this._searchStrategies(), {
+      context: 'PO: assert search visible',
+      logFallback: this._healLog,
+      perTryTimeout: 5000,
+    });
+    await locator.waitFor({ state: 'visible', timeout: 5000 });
+  }
+
+  async assertSearchBarValue(expectedText) {
+    const { locator } = await firstMatchingLocator(this.page, this._searchStrategies(), {
+      context: 'PO: assert search value',
+      logFallback: this._healLog,
+      perTryTimeout: 5000,
+    });
+    const actualValue = await locator.inputValue();
+    if (actualValue !== expectedText) {
+      throw new Error(`Expected search bar to contain "${expectedText}" but found "${actualValue}"`);
+    }
+  }
+
+  async assertSearchBarTrimmedValue(expectedTrimmedText) {
+    const { locator } = await firstMatchingLocator(this.page, this._searchStrategies(), {
+      context: 'PO: assert trimmed search value',
+      logFallback: this._healLog,
+      perTryTimeout: 5000,
+    });
+    const actualValue = await locator.inputValue();
+    if (actualValue !== expectedTrimmedText) {
+      throw new Error(
+        `Expected search bar to be trimmed as "${expectedTrimmedText}" but found "${actualValue}"`
+      );
+    }
+  }
+
+  async assertSearchBarEmpty() {
+    await this.assertSearchBarValue('');
+  }
+
+  async assertAllTabsVisible() {
+    for (const tabName of this.tabs) {
+      const { locator } = await firstMatchingLocator(this.page, this._tabStrategies(tabName), {
+        context: `PO: tab visible "${tabName}"`,
+        logFallback: this._healLog,
+        perTryTimeout: 5000,
+      });
+      await locator.waitFor({ state: 'visible', timeout: 5000 });
     }
   }
 

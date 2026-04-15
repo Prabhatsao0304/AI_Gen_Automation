@@ -1,0 +1,66 @@
+{
+  "feature": "<Feature Name>",
+  "product": "<fmt-os | fmt-pro>",
+  "version": "1.0",
+  "author": "<Author Name>",
+  "created_at": "<YYYY-MM-DD>",
+  "status": "draft",
+
+  "design": {
+    "description": "<Feature summary>",
+    "url_pattern": "<url-pattern>",
+    "entry_points": [
+      "<entry point>"
+    ],
+    "ui_components": [
+      "<component>"
+    ]
+  },
+
+  "flows": [
+    {
+      "id": "F1",
+      "name": "<Flow Name>",
+      "tag": "@smoke",
+      "priority": "critical",
+      "steps": [
+        "<step 1>",
+        "<step 2>"
+      ]
+    }
+  ],
+
+  "logic": {
+    "business_rules": [
+      "<rule>"
+    ],
+    "validations": [
+      "<validation>"
+    ],
+    "edge_cases": [
+      "<edge case>"
+    ]
+  },
+
+  "selector_hints": [
+    {
+      "element": "<element>",
+      "suggested_selector": "<selector>",
+      "notes": "<notes>"
+    }
+  ],
+
+  "test_data": {
+    "<group>": {
+      "<key>": "<value>"
+    }
+  },
+
+  "dependencies": {
+    "requires_login": true,
+    "required_role": "<role>",
+    "prerequisite_features": [
+      "<dependency>"
+    ]
+  }
+}
