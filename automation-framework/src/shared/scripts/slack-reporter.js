@@ -13,6 +13,7 @@ import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import { getSelfHealDriftLogPath } from '../locators/fallback-locator.js';
 import { getSelectorReportPath, getSelectorSummaryPath } from '../locators/selector-intelligence.js';
+import { buildDesignSummary } from '../design/design-report-summary.js';
 
 dotenv.config({ path: new URL('../../../.env', import.meta.url).pathname });
 
@@ -21,6 +22,7 @@ const projectRoot = path.resolve(__dirname, '../../..');
 const WEBHOOK_URL = process.env.SLACK_WEBHOOK_URL;
 const SLACK_BOT_TOKEN = process.env.SLACK_BOT_TOKEN;
 const SLACK_CHANNEL_ID = process.env.SLACK_CHANNEL_ID;
+const SHOW_DETAILED_DESIGN_SLACK_SECTION = false;
 const [, , reportPath, suiteName = 'Automation', designAuditPath] = process.argv;
 
 const resolveProjectPath = (inputPath) => {
@@ -265,6 +267,11 @@ function collectDesignEvidenceFiles(designAudit, limit = 10) {
   return evidenceFiles.slice(0, limit);
 }
 
+function buildDashboardUrl(reportFilePath) {
+  const dashboardFile = path.basename(String(reportFilePath || '').replace(/\.json$/i, '.dashboard.html'));
+  return `http://127.0.0.1:4173/${dashboardFile}`;
+}
+
 async function slackApiCall(method, body, options = {}) {
   const bodyType = options.bodyType || 'json';
   const headers = {
@@ -363,6 +370,8 @@ function buildPayload(stats, suiteName, designAudit, designReportState = {}, sel
   const allPassed = stats.failed === 0;
   const now = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
   const summary = designAudit?.summary || {};
+  const auditSummary = designAudit?.audit_summary || {};
+  const designSummaryState = buildDesignSummary(designAudit);
   const componentRows = summarizeComponentAnalysis(designAudit);
 
   const blocks = [
@@ -468,10 +477,14 @@ function buildPayload(stats, suiteName, designAudit, designReportState = {}, sel
     type: 'section',
     fields: [
       { type: 'mrkdwn', text: `*No. of Components Used (Rendered Instances)*\n${summary.components_used ?? 0}` },
-      { type: 'mrkdwn', text: `*No. of Components in CCLDS*\n${summary.cclds_component_count ?? 0}` },
-      { type: 'mrkdwn', text: `*Matching Central Component Library*\n${summary.matching_central_component_library ?? 0}` },
-      { type: 'mrkdwn', text: `*Mismatching Central Component Library*\n${summary.mismatching_central_component_library ?? 0}` },
+      { type: 'mrkdwn', text: `*CCL*\n${summary.ccl_component_count ?? 0}` },
+      { type: 'mrkdwn', text: `*Matching*\n${summary.matching_central_component_library ?? 0}` },
+      { type: 'mrkdwn', text: `*Mismatching*\n${summary.mismatching_central_component_library ?? 0}` },
       { type: 'mrkdwn', text: `*Run Time*\n${summary.runtime_sec ?? 0}s` },
+      { type: 'mrkdwn', text: `*Total Findings*\n${summary.total_findings ?? 0}` },
+      { type: 'mrkdwn', text: `*Audited Scenarios*\n${summary.scenarios_audited ?? 0}` },
+      { type: 'mrkdwn', text: `*Release Risk*\n${designSummaryState.releaseRisk}` },
+      { type: 'mrkdwn', text: `*Evidence Screenshots*\n${designSummaryState.screenshotCount}` },
     ],
   });
 
@@ -479,15 +492,7 @@ function buildPayload(stats, suiteName, designAudit, designReportState = {}, sel
     type: 'section',
     text: {
       type: 'mrkdwn',
-      text: `*Matching component names*\n${formatComponentNames(summary.matching_component_names, 'No matching components')}`,
-    },
-  });
-
-  blocks.push({
-    type: 'section',
-    text: {
-      type: 'mrkdwn',
-      text: `*Mismatching component names*\n${formatComponentNames(summary.mismatching_component_names, 'No mismatching components')}`,
+      text: `*Dashboard URL*\n${buildDashboardUrl(resolvedReportPath)}`,
     },
   });
 
@@ -498,37 +503,57 @@ function buildPayload(stats, suiteName, designAudit, designReportState = {}, sel
     .map(([name, count]) => `${name}: ${count}`)
     .join('  •  ');
 
-  blocks.push({
-    type: 'section',
-    fields: [
-      { type: 'mrkdwn', text: `*Findings*\n${summary.total_findings ?? 0}` },
-      { type: 'mrkdwn', text: `*Audited Scenarios*\n${summary.scenarios_audited ?? 0}` },
-      { type: 'mrkdwn', text: `*Categories*\n${categorySummary || '—'}` },
-      { type: 'mrkdwn', text: `*Severity*\n${severitySummary || '—'}` },
-    ],
-  });
+  if (SHOW_DETAILED_DESIGN_SLACK_SECTION) {
+    blocks.push({
+      type: 'section',
+      fields: [
+        { type: 'mrkdwn', text: `*Findings*\n${summary.total_findings ?? 0}` },
+        { type: 'mrkdwn', text: `*Audited Scenarios*\n${summary.scenarios_audited ?? 0}` },
+        { type: 'mrkdwn', text: `*Categories*\n${categorySummary || '—'}` },
+        { type: 'mrkdwn', text: `*Severity*\n${severitySummary || '—'}` },
+      ],
+    });
 
-  blocks.push({
-    type: 'section',
-    fields: [
-      { type: 'mrkdwn', text: `*Component Types Detected*\n${summary.component_types_detected ?? 0}` },
-      { type: 'mrkdwn', text: `*Variant Components*\n${summary.variant_components ?? 0}` },
-      { type: 'mrkdwn', text: `*Missing Expected Components*\n${summary.missing_expected_components ?? 0}` },
-      { type: 'mrkdwn', text: `*Unmapped Components*\n${summary.unmapped_components ?? 0}` },
-    ],
-  });
+    blocks.push({
+      type: 'section',
+      fields: [
+        { type: 'mrkdwn', text: `*Component Types Detected*\n${summary.component_types_detected ?? 0}` },
+        { type: 'mrkdwn', text: `*Variant Components*\n${summary.variant_components ?? 0}` },
+        { type: 'mrkdwn', text: `*Missing Expected Components*\n${summary.missing_expected_components ?? 0}` },
+        { type: 'mrkdwn', text: `*Unmapped Components*\n${summary.unmapped_components ?? 0}` },
+      ],
+    });
 
-  blocks.push({
-    type: 'section',
-    text: {
-      type: 'mrkdwn',
-      text: designReportState.evidence_count > 0
-        ? designReportState.slack_image_upload_enabled
-          ? `*Focused mismatch screenshots*\n${designReportState.evidence_count} screenshot(s) will be attached in this Slack thread for the mismatched design findings.`
-          : '*Focused mismatch screenshots*\nCaptured for the design report, but not attached here because this run is using webhook-only Slack config. Add `SLACK_BOT_TOKEN` and `SLACK_CHANNEL_ID` to attach the focused mismatch screenshots in Slack.'
-        : '*Focused mismatch screenshots*\nNo focused mismatch screenshots were generated in this run.',
-    },
-  });
+    blocks.push({
+      type: 'section',
+      fields: [
+        {
+          type: 'mrkdwn',
+          text: `*Token Drift*\nSpacing ${designSummaryState.tokenDrift.spacing}  •  Radius ${designSummaryState.tokenDrift.radius}  •  Typography ${designSummaryState.tokenDrift.typography}`,
+        },
+        {
+          type: 'mrkdwn',
+          text: `*Accessibility*\nUnlabeled controls ${designSummaryState.accessibility.unlabeledControls}  •  Missing alt ${designSummaryState.accessibility.missingAlt}`,
+        },
+        {
+          type: 'mrkdwn',
+          text: `*Security Signals*\nLink protections ${designSummaryState.security.linkProtections}  •  Secret exposure ${designSummaryState.security.secretExposure}`,
+        },
+      ],
+    });
+
+    blocks.push({
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: designReportState.evidence_count > 0
+          ? designReportState.slack_image_upload_enabled
+            ? `*Focused mismatch screenshots*\n${designReportState.evidence_count} screenshot(s) will be attached in this Slack thread for the mismatched design findings.`
+            : '*Focused mismatch screenshots*\nCaptured for the design report, but not attached here because this run is using webhook-only Slack config. Add `SLACK_BOT_TOKEN` and `SLACK_CHANNEL_ID` to attach the focused mismatch screenshots in Slack.'
+          : '*Focused mismatch screenshots*\nNo focused mismatch screenshots were generated in this run.',
+      },
+    });
+  }
 
   const componentTable = [
     '```',

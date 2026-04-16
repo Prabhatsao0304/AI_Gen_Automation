@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { buildDesignSummary } from '../design/design-report-summary.js';
 
 const [, , htmlReportPath, designReportPath, suiteName = 'Automation'] = process.argv;
 
@@ -46,11 +47,55 @@ function formatNameList(names = [], emptyLabel = '—') {
   return names.map((name) => `<span>${escapeHtml(name)}</span>`).join(', ');
 }
 
+function buildScoreBreakdownDetails(auditSummary = {}) {
+  const details = auditSummary?.score_details || {};
+  const design = details.design || {};
+  const accessibility = details.accessibility || {};
+  const stateCoverage = details.state_coverage || {};
+
+  if (!details.design && !details.accessibility && !details.state_coverage) {
+    return '';
+  }
+
+  return `
+  <details class="codex-design-report__details">
+    <summary>Expand score parameters and handling</summary>
+    <div class="codex-design-report__details-grid">
+      <div class="codex-design-report__detail-card">
+        <strong>Design score (${escapeHtml(auditSummary.design_score ?? 0)})</strong>
+        <div>Base: ${escapeHtml(design.base_score ?? 100)}</div>
+        <div>Severity penalty: ${escapeHtml(design.severity_penalty ?? 0)}</div>
+        <div>Weighted severity penalty: ${escapeHtml(design.weighted_severity_penalty ?? 0)}</div>
+        <div>Unmapped penalty: ${escapeHtml(design.unmapped_penalty ?? 0)}</div>
+        <div>Variant penalty: ${escapeHtml(design.variant_penalty ?? 0)}</div>
+        <div>Applied penalty: ${escapeHtml(design.applied_penalty ?? 0)}</div>
+        <div class="codex-design-report__muted">${escapeHtml(design.formula || '')}</div>
+      </div>
+      <div class="codex-design-report__detail-card">
+        <strong>Accessibility score (${escapeHtml(auditSummary.accessibility_score ?? 0)})</strong>
+        <div>Base: ${escapeHtml(accessibility.base_score ?? 100)}</div>
+        <div>Missing labels penalty: ${escapeHtml(accessibility.missing_labels_penalty ?? 0)}</div>
+        <div>Missing alt-text penalty: ${escapeHtml(accessibility.missing_alt_text_penalty ?? 0)}</div>
+        <div>Link security penalty: ${escapeHtml(accessibility.link_security_penalty ?? 0)}</div>
+        <div>Sensitive data penalty: ${escapeHtml(accessibility.sensitive_data_penalty ?? 0)}</div>
+        <div>Applied penalty: ${escapeHtml(accessibility.applied_penalty ?? 0)}</div>
+        <div class="codex-design-report__muted">${escapeHtml(accessibility.formula || '')}</div>
+      </div>
+      <div class="codex-design-report__detail-card">
+        <strong>State coverage score (${escapeHtml(auditSummary.state_coverage_score ?? 0)})</strong>
+        <div>Components considered: ${escapeHtml(stateCoverage.components_considered ?? 0)}</div>
+        <div>Average component coverage: ${escapeHtml(stateCoverage.average_component_coverage ?? 0)}</div>
+        <div class="codex-design-report__muted">${escapeHtml(stateCoverage.formula || '')}</div>
+      </div>
+    </div>
+  </details>`;
+}
+
 function buildComponentRows(components = []) {
   if (components.length === 0) {
     return `
       <tr>
-        <td colspan="5" class="codex-design-report__muted">No mapped components were observed on this screen.</td>
+        <td colspan="4" class="codex-design-report__muted">No mapped components were observed on this screen.</td>
       </tr>
     `;
   }
@@ -62,16 +107,16 @@ function buildComponentRows(components = []) {
           <td>${escapeHtml(component.display_name || component.component_name)}</td>
           <td>${escapeHtml(component.instance_count ?? component.instances_observed ?? 0)}</td>
           <td>${escapeHtml(component.match_status || 'Unknown')}</td>
-          <td>${escapeHtml(
-            typeof component.confidence_score === 'number'
-              ? component.confidence_score.toFixed(2)
-              : component.confidence_score || '—'
-          )}</td>
           <td>${escapeHtml(component.storybook_status || 'unknown')}</td>
         </tr>
       `
     )
     .join('');
+}
+
+function buildDashboardUrl(htmlReportPath) {
+  const dashboardFile = path.basename(String(htmlReportPath || '').replace(/\.html$/i, '.dashboard.html'));
+  return `http://127.0.0.1:4173/${dashboardFile}`;
 }
 
 function summarizeComponents(components = []) {
@@ -115,8 +160,11 @@ function summarizeComponents(components = []) {
   );
 }
 
-function buildReportSection(designReport, suiteName) {
+function buildReportSection(designReport, suiteName, htmlReportPath) {
   const summary = designReport?.summary || {};
+  const auditSummary = designReport?.audit_summary || {};
+  const findingSummary = buildDesignSummary(designReport);
+  const dashboardUrl = buildDashboardUrl(htmlReportPath);
   const components = summarizeComponents(
     designReport?.component_analysis ||
       (designReport?.scenarios || []).flatMap((scenario) => scenario.components || [])
@@ -204,6 +252,31 @@ ${START_MARKER}
     .codex-design-report__muted {
       color: #6c819b;
     }
+    .codex-design-report__details {
+      margin: -8px 0 24px;
+      background: #ffffff;
+      border: 1px solid #d9e3f0;
+      border-radius: 12px;
+      padding: 12px 16px;
+    }
+    .codex-design-report__details summary {
+      cursor: pointer;
+      font-weight: 600;
+      color: #254666;
+    }
+    .codex-design-report__details-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 12px;
+      margin-top: 14px;
+    }
+    .codex-design-report__detail-card {
+      background: #f7fbff;
+      border: 1px solid #e4edf6;
+      border-radius: 10px;
+      padding: 12px;
+      line-height: 1.5;
+    }
   </style>
   <h2>Design Report</h2>
   <p>Separate from the functional test result for <strong>${escapeHtml(suiteName)}</strong>. Design mismatches are reported here without failing the automation run.</p>
@@ -213,20 +286,36 @@ ${START_MARKER}
       <div class="codex-design-report__value">${escapeHtml(summary.components_used ?? 0)}</div>
     </div>
     <div class="codex-design-report__card">
-      <span class="codex-design-report__label">No. of Components in CCLDS</span>
-      <div class="codex-design-report__value">${escapeHtml(summary.cclds_component_count ?? 0)}</div>
+      <span class="codex-design-report__label">CCL</span>
+      <div class="codex-design-report__value">${escapeHtml(summary.ccl_component_count ?? 0)}</div>
     </div>
     <div class="codex-design-report__card">
-      <span class="codex-design-report__label">Matching Central Component Library</span>
+      <span class="codex-design-report__label">Matching</span>
       <div class="codex-design-report__value">${escapeHtml(summary.matching_central_component_library ?? 0)}</div>
     </div>
     <div class="codex-design-report__card">
-      <span class="codex-design-report__label">Mismatching Central Component Library</span>
+      <span class="codex-design-report__label">Mismatching</span>
       <div class="codex-design-report__value">${escapeHtml(summary.mismatching_central_component_library ?? 0)}</div>
     </div>
     <div class="codex-design-report__card">
       <span class="codex-design-report__label">Run Time</span>
       <div class="codex-design-report__value">${escapeHtml(summary.runtime_sec ?? 0)}s</div>
+    </div>
+    <div class="codex-design-report__card">
+      <span class="codex-design-report__label">Total Findings</span>
+      <div class="codex-design-report__value">${escapeHtml(summary.total_findings ?? 0)}</div>
+    </div>
+    <div class="codex-design-report__card">
+      <span class="codex-design-report__label">Audited Scenarios</span>
+      <div class="codex-design-report__value">${escapeHtml(summary.scenarios_audited ?? 0)}</div>
+    </div>
+    <div class="codex-design-report__card">
+      <span class="codex-design-report__label">Release Risk</span>
+      <div class="codex-design-report__value">${escapeHtml(findingSummary.releaseRisk)}</div>
+    </div>
+    <div class="codex-design-report__card">
+      <span class="codex-design-report__label">Evidence Screenshots</span>
+      <div class="codex-design-report__value">${escapeHtml(findingSummary.screenshotCount)}</div>
     </div>
   </div>
   <div class="codex-design-report__meta-row">
@@ -245,10 +334,23 @@ ${START_MARKER}
     <span><strong>Mismatching component names</strong>: ${formatNameList(summary.mismatching_component_names || [], 'No mismatching components')}</span>
   </div>
   <div class="codex-design-report__meta-row">
+    <span><strong>Dashboard</strong>: <a href="${escapeHtml(dashboardUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(dashboardUrl)}</a></span>
+  </div>
+  ${buildScoreBreakdownDetails(auditSummary)}
+  <div class="codex-design-report__meta-row">
     ${formatDictionary(summary.by_category || {})}
   </div>
   <div class="codex-design-report__meta-row">
     ${formatDictionary(summary.by_severity || {})}
+  </div>
+  <div class="codex-design-report__meta-row">
+    <span><strong>Token drift summary</strong>: spacing ${escapeHtml(findingSummary.spacingDrift)}, radius ${escapeHtml(findingSummary.radiusDrift)}, typography ${escapeHtml(findingSummary.fontDrift)}</span>
+  </div>
+  <div class="codex-design-report__meta-row">
+    <span><strong>Accessibility summary</strong>: unlabeled controls ${escapeHtml(findingSummary.unlabeledControls)}, images missing alt ${escapeHtml(findingSummary.imagesMissingAlt)}</span>
+  </div>
+  <div class="codex-design-report__meta-row">
+    <span><strong>Security summary</strong>: external link protections ${escapeHtml(findingSummary.linkProtections)}, secret exposure ${escapeHtml(findingSummary.secretExposure)}</span>
   </div>
   <h3>Observed Components</h3>
   <table class="codex-design-report__table">
@@ -257,7 +359,6 @@ ${START_MARKER}
         <th>Component</th>
         <th>Instance Count</th>
         <th>Match Status</th>
-        <th>Confidence</th>
         <th>Central Library Status</th>
       </tr>
     </thead>
@@ -291,7 +392,7 @@ function appendDesignReport(htmlReportPath, designReportPath, suiteName) {
   );
   html = html.replace(existingPattern, '');
 
-  const section = buildReportSection(designReport, suiteName);
+  const section = buildReportSection(designReport, suiteName, htmlReportPath);
   if (html.includes('</body>')) {
     html = html.replace('</body>', `${section}\n</body>`);
   } else {

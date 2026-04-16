@@ -142,124 +142,102 @@
       "ToastProvider"
     ]
   },
-  "source_of_truth_rules": {
-    "primary_sources": [
-      "central-component-library/src/index.tsx",
-      "central-component-library/src/patterns/index.ts",
-      "central-component-library/stories/**",
-      "central-component-library/src/theme/index.ts",
-      "central-component-library/src/theme/themeTokens.ts",
-      "central-component-library/src/utils/DesignVariantsUtils.tsx"
-    ],
-    "source_priority": [
-      "Direct Storybook story target",
-      "Theme and token definitions",
-      "Public component export contract",
-      "Approved product baseline only if Storybook coverage is missing"
-    ],
-    "rules": [
-      "A component is considered documented only if it is the direct target of a Storybook story",
-      "A component used only as a helper inside another story is not considered directly documented",
-      "A component exported from the public API but not documented in Storybook must be flagged as a documentation governance gap",
-      "A product implementation that recreates an existing public component with custom code must be flagged as a design-system bypass",
-      "A variant or state used in product but not represented in Storybook must be flagged as a variant or state documentation gap"
-    ]
-  },
-  "design_rules_and_regulations": {
-    "public_api_usage": [
-      "Product teams must use public components exported from the central component library where an approved library component already exists",
-      "Product teams should use the highest suitable abstraction available: templates before organisms, organisms before molecules, molecules before atoms"
-    ],
-    "token_usage": [
-      "Spacing must follow the library spacing function: 0.25rem multiplied by factor",
-      "Radius must use the approved token scale: none, xs, sm, md, lg, xl, xl2, xl3, circular",
-      "Typography must use the approved library font family: Noto Sans, sans-serif",
-      "Typography should stay within the approved font-size, font-weight, and line-height system from the central theme",
-      "Custom typography tokens such as label-sm, label-md, and body-xxs must be used consistently where applicable"
-    ],
-    "variant_rules": [
-      "Allowed designVariant grammar uses variant values plain, outlined, soft, solid",
-      "Allowed designVariant grammar uses size values sm, md, lg",
-      "Allowed designVariant grammar uses color values primary, neutral, danger, success, warning",
-      "Product implementations must not use undocumented designVariant combinations unless explicitly approved"
-    ],
-    "documentation_rules": [
-      "Public visual components should not be considered complete until they have direct Storybook documentation",
-      "Public subcomponents such as TabPanel, StepButton, AccordionDetails, or AutocompleteOption must either have direct Storybook docs or be explicitly documented in parent component stories",
-      "Public providers and API-style exports such as ToastProvider, BottomSheetProvider, or DocumentViewerEvent must have usage documentation even if they do not have visual stories"
-    ],
-    "styling_rules": [
-      "Product implementations should inherit from the central theme instead of arbitrary local styling",
-      "Hardcoded values should not replace approved spacing, radius, typography, or palette tokens without explicit approval"
-    ]
-  },
-  "design_ux_rules": {
-    "pattern_usage": [
-      "Navigation should prefer documented library patterns such as Breadcrumbs, TabBar, Tabs, and Drawer",
-      "Form UX should prefer documented inputs and form patterns such as Input, Select, Autocomplete, MultiSelect, Radio, Switch, CheckBox, DatePicker, and FormField",
-      "Primary and secondary actions should use documented Button patterns rather than ad hoc CTA styling",
-      "Data and content display should prefer patterns such as Table, DataTable, CustomDataGrid, Accordion, KeyValue, ListItem, and SearchBar",
-      "Feedback and recovery flows should prefer documented patterns such as CircularProgress, LinearProgress, SnackBar, Modal, ConfirmationModal, ErrorTemplate, and BaseErrorTemplate"
-    ],
-    "template_rules": [
-      "If a library template exists, such as DetailPageTemplate, LoginTemplate, or ErrorTemplate, product teams should not rebuild the same user flow inconsistently without approval"
-    ],
-    "state_rules": [
-      "Relevant component states must be complete and usable: default, selected or active, expanded or collapsed, disabled, loading, empty, success, error, hover or focus where meaningful",
-      "If Storybook shows a state or variant, product should support it consistently when the component is used in the same context",
-      "If a product omits an expected state for a public component, the system must flag a UX consistency issue"
-    ],
-    "readability_and_hierarchy": [
-      "Text should use Typography or FormattedTypography patterns rather than arbitrary typographic styling",
-      "Components that affect core flows such as search, selection, stepper progression, modals, bottom sheets, and confirmation patterns must preserve documented interaction expectations",
-      "If a screen uses a custom pattern where a documented library pattern already exists, the system must flag both UX inconsistency and design-system inconsistency"
-    ]
-  },
-  "production_observer_rules": {
-    "live_classification": [
-      "Documented library component",
-      "Undocumented public library export",
-      "Non-library custom component"
-    ],
-    "mapping_rules": [
-      "The observer must map live components back to the root public API whenever possible",
-      "For documented library components, compare live implementation against Storybook story target, documented variants and states, and central theme/token values",
-      "For undocumented public exports, run rule-based validation and flag a documentation governance gap",
-      "For custom replacements where a library component exists, flag a design-system bypass"
-    ],
-    "capture_requirements": [
-      "Screenshots",
-      "DOM structure",
-      "Computed styles",
-      "Accessible names and labels",
-      "Interaction states",
-      "Viewport size",
-      "Theme context where relevant"
-    ],
-    "validation_requirements": [
-      "Validate token usage for spacing, padding, radius, typography, and palette",
-      "Validate allowed variant grammar where designVariant, variant, size, or color are part of the component API",
-      "Validate relevant state behavior: hover, focus, active or selected, disabled, loading, error, empty, expanded or collapsed",
-      "Validate responsive behavior across approved viewport sizes"
-    ],
-    "finding_labels": [
-      "Documented mismatch",
-      "Documented match",
-      "Documentation gap",
-      "Variant or state gap",
-      "Design-system bypass",
-      "Rule-based finding",
-      "Heuristic supplement"
-    ],
-    "output_requirements": [
-      "Component name",
-      "Storybook status",
-      "Issue category",
-      "Severity",
-      "Confidence",
-      "Evidence",
-      "Recommended next action"
-    ]
+  "design_rules": {
+    "source_of_truth": {
+      "primary_sources": [
+        "central-component-library/src/index.tsx",
+        "central-component-library/stories/**",
+        "central-component-library/src/theme/index.ts",
+        "central-component-library/src/theme/themeTokens.ts",
+        "central-component-library/src/utils/DesignVariantsUtils.tsx"
+      ],
+      "priority": [
+        "Direct Storybook story target",
+        "Theme and token definitions",
+        "Public component export contract",
+        "Approved product baseline only if Storybook coverage is missing"
+      ],
+      "rules": [
+        "Only a direct Storybook story target counts as documented component truth",
+        "An exported component without direct Storybook coverage is a documentation governance gap",
+        "A custom product implementation of an existing public component is a design-system bypass",
+        "A product-only variant or state missing from Storybook is a variant or state governance gap"
+      ]
+    },
+    "component_governance": {
+      "usage_rules": [
+        "Use public central-library components whenever an approved equivalent exists",
+        "Use the highest suitable abstraction level available: template, organism, molecule, then atom",
+        "Public visual components are incomplete until they have direct Storybook documentation",
+        "Public subcomponents and provider-style exports must be documented directly or through explicit usage guidance"
+      ],
+      "preferred_patterns": [
+        "Navigation should prefer Breadcrumbs, TabBar, Tabs, and Drawer",
+        "Forms should prefer Input, Select, Autocomplete, MultiSelect, Radio, Switch, CheckBox, DatePicker, and FormField",
+        "Actions should prefer documented Button patterns",
+        "Content display should prefer Table, DataTable, CustomDataGrid, Accordion, KeyValue, ListItem, and SearchBar",
+        "Feedback should prefer CircularProgress, LinearProgress, SnackBar, Modal, ConfirmationModal, ErrorTemplate, and BaseErrorTemplate"
+      ]
+    },
+    "token_and_variant_rules": {
+      "token_rules": [
+        "Spacing must follow the library spacing function: 0.25rem multiplied by factor",
+        "Radius must use the approved token scale: none, xs, sm, md, lg, xl, xl2, xl3, circular",
+        "Typography must use the approved library font family: Noto Sans, sans-serif",
+        "Typography must stay within approved font-size, font-weight, and line-height tokens",
+        "Hardcoded spacing, radius, typography, or palette overrides are not allowed without explicit approval"
+      ],
+      "variant_rules": [
+        "Allowed designVariant values use variants plain, outlined, soft, solid",
+        "Allowed designVariant sizes are sm, md, lg",
+        "Allowed designVariant colors are primary, neutral, danger, success, warning",
+        "Undocumented designVariant combinations are not allowed without approval"
+      ]
+    },
+    "ux_rules": {
+      "state_rules": [
+        "Relevant public component states must be complete and usable: default, selected or active, expanded or collapsed, disabled, loading, empty, success, error, and meaningful hover or focus states",
+        "A Storybook-documented state must behave consistently in product when the same component is used in the same context",
+        "A missing expected state for a public component is a UX consistency issue"
+      ],
+      "clarity_rules": [
+        "Text should use Typography or FormattedTypography patterns rather than arbitrary typographic styling",
+        "Core interaction patterns such as search, selection, stepper progression, modal flows, bottom sheets, and confirmations must preserve documented behavior",
+        "A custom pattern used where a documented library pattern exists is both a UX inconsistency and a design-system inconsistency"
+      ]
+    },
+    "observer_rules": {
+      "classification": [
+        "Documented library component",
+        "Undocumented public library export",
+        "Non-library custom component"
+      ],
+      "capture": [
+        "Screenshots",
+        "DOM structure",
+        "Computed styles",
+        "Accessible names and labels",
+        "Interaction states",
+        "Viewport size",
+        "Theme context where relevant"
+      ],
+      "validation": [
+        "Map live components back to the public API whenever possible",
+        "Validate documented components against Storybook, theme tokens, and approved variants or states",
+        "Validate undocumented public exports with rule-based checks and flag governance gaps",
+        "Validate token usage, variant grammar, relevant state behavior, and responsive behavior",
+        "Label findings as documented mismatch, documented match, documentation gap, variant or state gap, design-system bypass, rule-based finding, or heuristic supplement"
+      ],
+      "output": [
+        "Component name",
+        "Storybook status",
+        "Issue category",
+        "Severity",
+        "Confidence",
+        "Evidence",
+        "Recommended next action"
+      ]
+    }
   },
   "automation_config": {
     "non_blocking": true,

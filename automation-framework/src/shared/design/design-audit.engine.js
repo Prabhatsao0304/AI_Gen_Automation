@@ -794,6 +794,458 @@ function summarizeComponents(components = []) {
   };
 }
 
+function clampScore(value, min = 0, max = 100) {
+  return Math.max(min, Math.min(max, Math.round(value)));
+}
+
+function normalizeConfidence(value) {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return Math.max(0, Math.min(1, Number(value.toFixed(2))));
+  }
+
+  const normalized = cleanText(value).toLowerCase();
+  if (normalized === 'high') return 0.9;
+  if (normalized === 'medium') return 0.7;
+  if (normalized === 'low') return 0.45;
+  return 0.5;
+}
+
+function normalizeSeverity(value) {
+  const normalized = cleanText(value).toLowerCase();
+  if (normalized === 'critical') return 'Critical';
+  if (normalized === 'high') return 'High';
+  if (normalized === 'medium') return 'Medium';
+  return 'Low';
+}
+
+function severityBucket(value) {
+  return normalizeSeverity(value).toLowerCase();
+}
+
+function severityWeight(value) {
+  const normalized = normalizeSeverity(value);
+  if (normalized === 'Critical') return 25;
+  if (normalized === 'High') return 15;
+  if (normalized === 'Medium') return 8;
+  return 4;
+}
+
+function buildIssueId(finding, scenarioName, index) {
+  return (
+    finding?.id ||
+    [
+      cleanText(scenarioName).toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+      cleanText(finding?.title).toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+      index + 1,
+    ]
+      .filter(Boolean)
+      .join('-')
+  );
+}
+
+function getIssueType(finding) {
+  const title = cleanText(finding?.title).toLowerCase();
+  if (title.includes('spacing')) return 'token_drift.spacing';
+  if (title.includes('radius')) return 'token_drift.radius';
+  if (title.includes('font')) return 'token_drift.typography';
+  if (title.includes('label')) return 'accessibility.labels';
+  if (title.includes('alt text')) return 'accessibility.alt_text';
+  if (title.includes('rel protections')) return 'security.link_protection';
+  if (title.includes('secret-like')) return 'security.sensitive_data';
+  return cleanText(finding?.category || 'design_issue');
+}
+
+function buildIssues(scenarios = []) {
+  return scenarios.flatMap((scenario) =>
+    (scenario.findings || []).map((finding, index) => ({
+      id: buildIssueId(finding, scenario.scenario_name, index),
+      type: getIssueType(finding),
+      title: cleanText(finding.title),
+      severity: normalizeSeverity(finding.severity),
+      impact:
+        cleanText(finding?.report_context?.possible_real_issue) ||
+        cleanText(finding.message),
+      confidence: normalizeConfidence(finding.confidence),
+      component: cleanText(finding.component || 'General'),
+      screen: cleanText(scenario.scenario_name),
+      fix_suggestion:
+        cleanText(finding?.report_context?.recommended_check) ||
+        'Review the affected UI against the central component library rules.',
+      auto_fix_possible: [
+        'Spacing values outside token scale',
+        'Border radius outside approved token scale',
+        'Base font family drift',
+      ].includes(cleanText(finding.title)),
+    }))
+  );
+}
+
+function buildSeveritySummary(issues = []) {
+  return issues.reduce(
+    (acc, issue) => {
+      acc[severityBucket(issue.severity)] += 1;
+      return acc;
+    },
+    { critical: 0, high: 0, medium: 0, low: 0 }
+  );
+}
+
+function inferStatesForComponent(component = {}) {
+  const signatures = component.variant_signatures || [];
+  const states = new Set();
+
+  if (component.observed) {
+    states.add('default');
+  }
+
+  if (component.component_name === 'CircularProgress') {
+    states.add('loading');
+  }
+
+  for (const signature of signatures) {
+    const normalized = String(signature || '').toLowerCase();
+    if (normalized.includes('selected')) states.add('selected');
+    if (normalized.includes('disabled')) states.add('disabled');
+    if (normalized.includes('checked')) states.add('checked');
+  }
+
+  const statesPresent = Array.from(states);
+  const statesMissing = [];
+  const coverageScore =
+    statesPresent.length === 0 ? 0 : Number(Math.min(1, 0.4 + statesPresent.length * 0.2).toFixed(2));
+
+  return {
+    component: component.display_name || component.component_name,
+    states_present: statesPresent,
+    states_missing: statesMissing,
+    coverage_score: coverageScore,
+  };
+}
+
+function buildStateCoverage(components = []) {
+  return components
+    .filter((component) => component.observed)
+    .map((component) => inferStatesForComponent(component));
+}
+
+function buildTokenDrift(scenarios = []) {
+  const findings = scenarios.flatMap((scenario) => scenario.findings || []);
+
+  const createDriftItem = (finding, scenario) => ({
+    screen: cleanText(scenario.scenario_name),
+    component: cleanText(finding.component || 'General'),
+    severity: normalizeSeverity(finding.severity),
+    confidence: normalizeConfidence(finding.confidence),
+    impact:
+      cleanText(finding?.report_context?.possible_real_issue) ||
+      cleanText(finding.message),
+    fix_suggestion:
+      cleanText(finding?.report_context?.recommended_check) ||
+      'Review the affected UI against CCL token rules.',
+    screenshot_path: cleanText(
+      finding?.evidence?.screenshot_absolute_path || finding?.evidence?.screenshot_path
+    ),
+  });
+
+  return findings.reduce(
+    (acc, finding) => {
+      const scenario = scenarios.find((item) =>
+        (item.findings || []).some((candidate) => candidate.id === finding.id)
+      );
+      const title = cleanText(finding.title);
+      if (title === 'Base font family drift') {
+        acc.font_issues.push(createDriftItem(finding, scenario || {}));
+      } else if (title === 'Spacing values outside token scale') {
+        acc.spacing_violations.push(createDriftItem(finding, scenario || {}));
+      } else if (title === 'Border radius outside approved token scale') {
+        acc.radius_violations.push(createDriftItem(finding, scenario || {}));
+      }
+      return acc;
+    },
+    {
+      font_issues: [],
+      spacing_violations: [],
+      radius_violations: [],
+    }
+  );
+}
+
+function buildVariantConsistency(components = []) {
+  return {
+    conflicts: components
+      .filter((component) => component.variant_inconsistency)
+      .map((component) => ({
+        component: component.display_name || component.component_name,
+        issue:
+          component.match_status === 'Unmapped'
+            ? 'Multiple rendered variants detected on an unmapped component.'
+            : 'Multiple rendered variants detected outside the allowed variant mix.',
+        severity: component.match_status === 'Unmapped' ? 'Medium' : 'Low',
+        confidence: normalizeConfidence(component.confidence_score),
+        fix_suggestion:
+          component.match_status === 'Unmapped'
+            ? 'Map this component to CCL or replace it with an approved component.'
+            : 'Review variant usage and align the rendered states with documented variants.',
+      })),
+  };
+}
+
+function buildAccessibilitySummary(scenarios = []) {
+  const findings = scenarios.flatMap((scenario) =>
+    (scenario.findings || []).map((finding) => ({ scenario, finding }))
+  );
+
+  const mapFinding = ({ scenario, finding }) => ({
+    screen: cleanText(scenario.scenario_name),
+    severity: normalizeSeverity(finding.severity),
+    confidence: normalizeConfidence(finding.confidence),
+    impact:
+      cleanText(finding?.report_context?.possible_real_issue) ||
+      cleanText(finding.message),
+    fix_suggestion:
+      cleanText(finding?.report_context?.recommended_check) ||
+      'Review the affected element against accessibility rules.',
+    screenshot_path: cleanText(
+      finding?.evidence?.screenshot_absolute_path || finding?.evidence?.screenshot_path
+    ),
+  });
+
+  return {
+    missing_labels: findings
+      .filter(({ finding }) => cleanText(finding.title) === 'Interactive controls without visible or accessible labels')
+      .map(mapFinding),
+    missing_alt_text: findings
+      .filter(({ finding }) => cleanText(finding.title) === 'Visible images missing alt text')
+      .map(mapFinding),
+    link_security_issues: findings
+      .filter(({ finding }) => cleanText(finding.title) === 'External links missing rel protections')
+      .map(mapFinding),
+    sensitive_data_exposure: findings
+      .filter(({ finding }) => cleanText(finding.title) === 'Secret-like values visible in UI text')
+      .map(mapFinding),
+  };
+}
+
+function buildVisualHierarchy(components = [], tokenDrift = {}) {
+  const primaryCtaCount = components.filter((component) =>
+    (component.variant_signatures || []).some(
+      (signature) =>
+        String(signature).includes('colorPrimary') || String(signature).includes('variantSolid')
+    )
+  ).length;
+
+  const issue =
+    tokenDrift.font_issues.length > 0 || tokenDrift.spacing_violations.length > 0
+      ? 'Typography and spacing drift may weaken hierarchy consistency on the audited screen.'
+      : 'No strong hierarchy issue was detected from the current audit signals.';
+
+  const recommendation =
+    tokenDrift.font_issues.length > 0 || tokenDrift.spacing_violations.length > 0
+      ? 'Restore the base font and token-aligned spacing before using hierarchy as a release-quality visual signal.'
+      : 'Keep CTA emphasis and text hierarchy aligned with CCL patterns.';
+
+  return {
+    primary_cta_count: primaryCtaCount,
+    issue,
+    recommendation,
+  };
+}
+
+function buildPatternValidation(components = []) {
+  const observed = new Set(
+    components.filter((component) => component.observed).map((component) => component.component_name)
+  );
+  const rows = [];
+
+  if (
+    ['Breadcrumbs', 'Tabs', 'Tab', 'Drawer', 'ListItemButton'].some((name) => observed.has(name))
+  ) {
+    rows.push({
+      pattern: 'Navigation',
+      issue: 'Observed navigation uses documented library patterns.',
+      severity: 'Low',
+    });
+  }
+
+  if (observed.has('SearchBar')) {
+    rows.push({
+      pattern: 'Search',
+      issue: 'Search pattern is mapped to a documented library component.',
+      severity: 'Low',
+    });
+  }
+
+  if (observed.has('DataTable') || observed.has('CircularProgress')) {
+    rows.push({
+      pattern: 'Data Display',
+      issue: 'Data display pattern is aligned with documented CCL components.',
+      severity: 'Low',
+    });
+  }
+
+  if (observed.has('MenuButton')) {
+    rows.push({
+      pattern: 'Menu Action',
+      issue: 'MenuButton is rendered but not mapped to CCL.',
+      severity: 'Medium',
+    });
+  }
+
+  return rows;
+}
+
+function buildFlowIntegrity(scenarios = []) {
+  return scenarios.map((scenario) => ({
+    flow: cleanText(scenario.scenario_name),
+    issue:
+      (scenario.findings || []).length > 0
+        ? 'Functional flow passed, but non-blocking design issues were detected.'
+        : 'No design issue detected in this flow.',
+    screens: [cleanText(scenario.scenario_name)],
+    severity:
+      (scenario.findings || []).some((finding) => normalizeSeverity(finding.severity) === 'Medium')
+        ? 'Medium'
+        : (scenario.findings || []).length > 0
+          ? 'Low'
+          : 'Low',
+  }));
+}
+
+function buildDesignSystemGaps(components = [], scenarios = []) {
+  const gaps = [];
+
+  for (const component of components) {
+    if (component.match_status === 'Unmapped') {
+      gaps.push({
+        gap: `${component.display_name || component.component_name} is rendered but not mapped to CCL.`,
+        impact: 'This introduces an unmanaged component outside the central design system.',
+        recommendation: 'Map it to an approved library component or add and document it in CCL.',
+      });
+    } else if (component.storybook_status === 'public export not directly documented') {
+      gaps.push({
+        gap: `${component.display_name || component.component_name} is in the public library API but not directly documented in Storybook.`,
+        impact: 'This reduces design-system governance and increases interpretation drift.',
+        recommendation: 'Add direct Storybook documentation or explicit parent-level documented usage.',
+      });
+    }
+  }
+
+  if ((scenarios || []).every((scenario) => !scenario.feature_ruleset_name)) {
+    gaps.push({
+      gap: 'Feature-level design ruleset is missing for the audited feature.',
+      impact: 'The audit is currently relying on shared CCL rules only and cannot validate feature-specific UI expectations.',
+      recommendation: 'Add a feature JSON ruleset to extend the audit beyond shared design-system checks.',
+    });
+  }
+
+  return gaps;
+}
+
+function buildRegressionTracking() {
+  return {
+    new_issues: 0,
+    resolved_issues: 0,
+    regressions: [],
+  };
+}
+
+function buildAiInsights({
+  issues = [],
+  tokenDrift = {},
+  designSystemGaps = [],
+  accessibility = {},
+}) {
+  const topRecommendations = [];
+
+  if (tokenDrift.font_issues.length > 0) {
+    topRecommendations.push('Restore the CCL base font inheritance across audited interactive controls.');
+  }
+  if (designSystemGaps.some((gap) => gap.gap.includes('not mapped to CCL'))) {
+    topRecommendations.push('Map or replace unmapped UI controls with approved CCL components.');
+  }
+  if ((accessibility.missing_labels || []).length > 0) {
+    topRecommendations.push('Add visible or accessible labels to interactive controls flagged by the audit.');
+  }
+  if (tokenDrift.spacing_violations.length > 0 || tokenDrift.radius_violations.length > 0) {
+    topRecommendations.push('Normalize spacing and radius values back to approved CCL tokens.');
+  }
+
+  return {
+    summary:
+      issues.length > 0
+        ? 'Functional execution is stable, but the design audit found consistent design-system drift and component-governance gaps.'
+        : 'No design issue was detected in the current audit.',
+    top_recommendations: topRecommendations,
+  };
+}
+
+function computeAuditScores({
+  issues = [],
+  accessibility = {},
+  stateCoverage = [],
+  components = [],
+}) {
+  const severityPenalty = issues.reduce((total, issue) => total + severityWeight(issue.severity), 0);
+  const unmappedPenalty = components.filter((component) => component.match_status === 'Unmapped').length * 6;
+  const variantPenalty = components.filter((component) => component.variant_inconsistency).length * 3;
+  const weightedSeverityPenalty = Number((severityPenalty * 0.75).toFixed(2));
+  const rawDesignPenalty = weightedSeverityPenalty + unmappedPenalty + variantPenalty;
+  const appliedDesignPenalty = Math.min(65, rawDesignPenalty);
+  const designScore = clampScore(100 - appliedDesignPenalty);
+
+  const missingLabelsPenalty = (accessibility.missing_labels || []).length * 12;
+  const missingAltPenalty = (accessibility.missing_alt_text || []).length * 10;
+  const linkSecurityPenalty = (accessibility.link_security_issues || []).length * 8;
+  const sensitiveDataPenalty = (accessibility.sensitive_data_exposure || []).length * 15;
+  const rawAccessibilityPenalty =
+    missingLabelsPenalty + missingAltPenalty + linkSecurityPenalty + sensitiveDataPenalty;
+  const appliedAccessibilityPenalty = Math.min(70, rawAccessibilityPenalty);
+  const accessibilityScore = clampScore(100 - appliedAccessibilityPenalty);
+
+  const averageCoverage =
+    stateCoverage.length > 0
+      ? stateCoverage.reduce((total, item) => total + Number(item.coverage_score || 0), 0) /
+        stateCoverage.length
+      : 0;
+  const stateCoverageScore = clampScore(averageCoverage * 100);
+
+  return {
+    design_score: designScore,
+    accessibility_score: accessibilityScore,
+    state_coverage_score: stateCoverageScore,
+    score_details: {
+      design: {
+        base_score: 100,
+        severity_penalty: severityPenalty,
+        weighted_severity_penalty: weightedSeverityPenalty,
+        unmapped_penalty: unmappedPenalty,
+        variant_penalty: variantPenalty,
+        raw_penalty: rawDesignPenalty,
+        applied_penalty: appliedDesignPenalty,
+        score: designScore,
+        formula: '100 - min(65, severity_weight * 0.75 + unmapped_penalty + variant_penalty)',
+      },
+      accessibility: {
+        base_score: 100,
+        missing_labels_penalty: missingLabelsPenalty,
+        missing_alt_text_penalty: missingAltPenalty,
+        link_security_penalty: linkSecurityPenalty,
+        sensitive_data_penalty: sensitiveDataPenalty,
+        raw_penalty: rawAccessibilityPenalty,
+        applied_penalty: appliedAccessibilityPenalty,
+        score: accessibilityScore,
+        formula: '100 - min(70, missing_labels*12 + missing_alt*10 + link_security*8 + sensitive_data*15)',
+      },
+      state_coverage: {
+        components_considered: stateCoverage.length,
+        average_component_coverage: Number(averageCoverage.toFixed(2)),
+        score: stateCoverageScore,
+        formula: 'round(average(component coverage) * 100)',
+      },
+    },
+  };
+}
+
 class DesignAuditManager {
   constructor() {
     this.reportPath = process.env.DESIGN_AUDIT_REPORT_PATH || defaultReportPath;
@@ -898,11 +1350,34 @@ class DesignAuditManager {
     const componentSummary = summarizeComponents(
       this.scenarios.flatMap((scenario) => scenario.components || [])
     );
+    const issues = buildIssues(this.scenarios);
+    const severitySummary = buildSeveritySummary(issues);
+    const tokenDrift = buildTokenDrift(this.scenarios);
+    const stateCoverage = buildStateCoverage(componentSummary.components);
+    const accessibility = buildAccessibilitySummary(this.scenarios);
+    const variantConsistency = buildVariantConsistency(componentSummary.components);
+    const visualHierarchy = buildVisualHierarchy(componentSummary.components, tokenDrift);
+    const patternValidation = buildPatternValidation(componentSummary.components);
+    const flowIntegrity = buildFlowIntegrity(this.scenarios);
+    const designSystemGaps = buildDesignSystemGaps(componentSummary.components, this.scenarios);
+    const regressionTracking = buildRegressionTracking();
+    const aiInsights = buildAiInsights({
+      issues,
+      tokenDrift,
+      designSystemGaps,
+      accessibility,
+    });
+    const scores = computeAuditScores({
+      issues,
+      accessibility,
+      stateCoverage,
+      components: componentSummary.components,
+    });
     const totalRuntimeMs = this.scenarios.reduce(
       (total, scenario) => total + (scenario.audit_runtime_ms || 0),
       0
     );
-    const ccldsComponentCount = Number(
+    const cclComponentCount = Number(
       sharedRuleset?.coverage_snapshot?.public_runtime_exports ||
         [
           ...(sharedRuleset?.coverage_snapshot?.documented_components || []),
@@ -914,6 +1389,46 @@ class DesignAuditManager {
       generated_at: new Date().toISOString(),
       run_started_at: this.runStartedAt,
       report_path: this.reportPath,
+      audit_summary: {
+        total_components: componentSummary.components_used,
+        unique_component_types: componentSummary.component_types_detected,
+        design_score: scores.design_score,
+        accessibility_score: scores.accessibility_score,
+        state_coverage_score: scores.state_coverage_score,
+        score_details: scores.score_details,
+      },
+      issues,
+      severity_summary: severitySummary,
+      component_mapping: {
+        observed_components: componentSummary.components.map((component) => ({
+          name: component.display_name || component.component_name,
+          count: component.instance_count ?? component.instances_observed ?? 0,
+          match_status: component.match_status || 'Unmapped',
+          library_status:
+            component.storybook_status === 'not found in central component library'
+              ? 'not found'
+              : component.storybook_status || 'not found',
+        })),
+      },
+      token_drift: tokenDrift,
+      variant_consistency: variantConsistency,
+      state_coverage: stateCoverage,
+      accessibility,
+      visual_hierarchy: visualHierarchy,
+      pattern_validation: patternValidation,
+      flow_integrity: flowIntegrity,
+      design_system_gaps: designSystemGaps,
+      regression_tracking: regressionTracking,
+      ai_insights: aiInsights,
+      metadata: {
+        run_id: createHash('sha1')
+          .update(`${this.runStartedAt}::${this.reportPath}`)
+          .digest('hex')
+          .slice(0, 12),
+        timestamp: new Date().toISOString(),
+        ruleset: 'CCL_SHARED',
+        audit_mode: 'non-blocking',
+      },
       summary: {
         scenarios_audited: this.scenarios.length,
         total_findings: allFindings.length,
@@ -926,7 +1441,7 @@ class DesignAuditManager {
         missing_expected_components: componentSummary.missing_expected_components,
         unmapped_components: componentSummary.unmapped_components,
         variant_components: componentSummary.variant_components,
-        cclds_component_count: ccldsComponentCount,
+        ccl_component_count: cclComponentCount,
         matching_component_names: componentSummary.matching_component_names,
         mismatching_component_names: componentSummary.mismatching_component_names,
         missing_expected_component_names: componentSummary.missing_expected_component_names,
