@@ -13,6 +13,7 @@ import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import { getSelfHealDriftLogPath } from '../locators/fallback-locator.js';
 import { getSelectorReportPath, getSelectorSummaryPath } from '../locators/selector-intelligence.js';
+import { buildDesignSummary } from '../design/design-report-summary.js';
 
 dotenv.config({ path: new URL('../../../.env', import.meta.url).pathname });
 
@@ -226,16 +227,6 @@ function summarizeComponentAnalysis(designAudit) {
     .slice(0, 12);
 }
 
-function formatComponentNames(names = [], emptyLabel = '—', limit = 20) {
-  if (!Array.isArray(names) || names.length === 0) {
-    return emptyLabel;
-  }
-
-  const visibleNames = names.slice(0, limit);
-  const suffix = names.length > limit ? `  •  +${names.length - limit} more` : '';
-  return `${visibleNames.join('  •  ')}${suffix}`;
-}
-
 function collectDesignEvidenceFiles(designAudit, limit = 10) {
   const evidenceFiles = [];
   const seenPaths = new Set();
@@ -263,6 +254,11 @@ function collectDesignEvidenceFiles(designAudit, limit = 10) {
   }
 
   return evidenceFiles.slice(0, limit);
+}
+
+function buildDashboardUrl(reportFilePath) {
+  const dashboardFile = path.basename(String(reportFilePath || '').replace(/\.json$/i, '.dashboard.html'));
+  return `http://127.0.0.1:4173/${dashboardFile}`;
 }
 
 async function slackApiCall(method, body, options = {}) {
@@ -359,10 +355,11 @@ async function uploadFileToSlackChannel({ filePath, title, initialComment, threa
   });
 }
 
-function buildPayload(stats, suiteName, designAudit, designReportState = {}, selfHealFallbacks = 0, selectorEvents = []) {
+function buildPayload(stats, suiteName, designAudit, selfHealFallbacks = 0, selectorEvents = []) {
   const allPassed = stats.failed === 0;
   const now = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
   const summary = designAudit?.summary || {};
+  const designSummaryState = buildDesignSummary(designAudit);
   const componentRows = summarizeComponentAnalysis(designAudit);
 
   const blocks = [
@@ -468,53 +465,14 @@ function buildPayload(stats, suiteName, designAudit, designReportState = {}, sel
     type: 'section',
     fields: [
       { type: 'mrkdwn', text: `*No. of Components Used (Rendered Instances)*\n${summary.components_used ?? 0}` },
-      { type: 'mrkdwn', text: `*No. of Components in CCLDS*\n${summary.cclds_component_count ?? 0}` },
-      { type: 'mrkdwn', text: `*Matching Central Component Library*\n${summary.matching_central_component_library ?? 0}` },
-      { type: 'mrkdwn', text: `*Mismatching Central Component Library*\n${summary.mismatching_central_component_library ?? 0}` },
+      { type: 'mrkdwn', text: `*CCL*\n${summary.ccl_component_count ?? 0}` },
+      { type: 'mrkdwn', text: `*Matching*\n${summary.matching_central_component_library ?? 0}` },
+      { type: 'mrkdwn', text: `*Mismatching*\n${summary.mismatching_central_component_library ?? 0}` },
       { type: 'mrkdwn', text: `*Run Time*\n${summary.runtime_sec ?? 0}s` },
-    ],
-  });
-
-  blocks.push({
-    type: 'section',
-    text: {
-      type: 'mrkdwn',
-      text: `*Matching component names*\n${formatComponentNames(summary.matching_component_names, 'No matching components')}`,
-    },
-  });
-
-  blocks.push({
-    type: 'section',
-    text: {
-      type: 'mrkdwn',
-      text: `*Mismatching component names*\n${formatComponentNames(summary.mismatching_component_names, 'No mismatching components')}`,
-    },
-  });
-
-  const categorySummary = Object.entries(summary.by_category || {})
-    .map(([name, count]) => `${name}: ${count}`)
-    .join('  •  ');
-  const severitySummary = Object.entries(summary.by_severity || {})
-    .map(([name, count]) => `${name}: ${count}`)
-    .join('  •  ');
-
-  blocks.push({
-    type: 'section',
-    fields: [
-      { type: 'mrkdwn', text: `*Findings*\n${summary.total_findings ?? 0}` },
+      { type: 'mrkdwn', text: `*Total Findings*\n${summary.total_findings ?? 0}` },
       { type: 'mrkdwn', text: `*Audited Scenarios*\n${summary.scenarios_audited ?? 0}` },
-      { type: 'mrkdwn', text: `*Categories*\n${categorySummary || '—'}` },
-      { type: 'mrkdwn', text: `*Severity*\n${severitySummary || '—'}` },
-    ],
-  });
-
-  blocks.push({
-    type: 'section',
-    fields: [
-      { type: 'mrkdwn', text: `*Component Types Detected*\n${summary.component_types_detected ?? 0}` },
-      { type: 'mrkdwn', text: `*Variant Components*\n${summary.variant_components ?? 0}` },
-      { type: 'mrkdwn', text: `*Missing Expected Components*\n${summary.missing_expected_components ?? 0}` },
-      { type: 'mrkdwn', text: `*Unmapped Components*\n${summary.unmapped_components ?? 0}` },
+      { type: 'mrkdwn', text: `*Release Risk*\n${designSummaryState.releaseRisk}` },
+      { type: 'mrkdwn', text: `*Evidence Screenshots*\n${designSummaryState.screenshotCount}` },
     ],
   });
 
@@ -522,11 +480,7 @@ function buildPayload(stats, suiteName, designAudit, designReportState = {}, sel
     type: 'section',
     text: {
       type: 'mrkdwn',
-      text: designReportState.evidence_count > 0
-        ? designReportState.slack_image_upload_enabled
-          ? `*Focused mismatch screenshots*\n${designReportState.evidence_count} screenshot(s) will be attached in this Slack thread for the mismatched design findings.`
-          : '*Focused mismatch screenshots*\nCaptured for the design report, but not attached here because this run is using webhook-only Slack config. Add `SLACK_BOT_TOKEN` and `SLACK_CHANNEL_ID` to attach the focused mismatch screenshots in Slack.'
-        : '*Focused mismatch screenshots*\nNo focused mismatch screenshots were generated in this run.',
+      text: `*Dashboard URL*\n${buildDashboardUrl(resolvedReportPath)}`,
     },
   });
 
@@ -567,18 +521,12 @@ const designAudit = parseDesignAudit(resolvedDesignAuditPath);
 const selfHealFallbacks = countSelfHealDriftEvents();
 const selectorEvents = loadSelectorResolutionReport();
 const designEvidenceFiles = collectDesignEvidenceFiles(designAudit);
-const designReportState = {
-  path: resolvedDesignAuditPath,
-  found: Boolean(designAudit?.summary),
-  slack_image_upload_enabled: Boolean(SLACK_BOT_TOKEN && SLACK_CHANNEL_ID),
-  evidence_count: designEvidenceFiles.length,
-};
 
 if (!designAudit && resolvedDesignAuditPath) {
   console.warn(`Design report not found or invalid: ${resolvedDesignAuditPath}`);
 }
 
-const payload = buildPayload(stats, suiteName, designAudit, designReportState, selfHealFallbacks, selectorEvents);
+const payload = buildPayload(stats, suiteName, designAudit, selfHealFallbacks, selectorEvents);
 let threadTs = null;
 let usedWebhookFallback = false;
 

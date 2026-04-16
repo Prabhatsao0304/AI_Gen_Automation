@@ -38,8 +38,9 @@ function runCommand(command, args, extraEnv = {}) {
 const resolvedReportPath = path.resolve(projectRoot, reportPath);
 const designReportPath = resolvedReportPath.replace(/\.json$/i, '.design.json');
 const htmlReportPath = resolvedReportPath.replace(/\.json$/i, '.html');
+const dashboardPath = resolvedReportPath.replace(/\.json$/i, '.dashboard.html');
 
-for (const artifactPath of [resolvedReportPath, designReportPath, htmlReportPath]) {
+for (const artifactPath of [resolvedReportPath, designReportPath, htmlReportPath, dashboardPath]) {
   try {
     fs.rmSync(artifactPath, { force: true });
   } catch {
@@ -67,6 +68,14 @@ if (fs.existsSync(resolvedReportPath)) {
     path.resolve(projectRoot, 'src/shared/scripts/append-design-report.js'),
     htmlReportPath,
     designReportPath,
+    suiteName,
+  ]);
+
+  await runCommand(process.execPath, [
+    path.resolve(projectRoot, 'src/shared/scripts/generate-design-dashboard.js'),
+    resolvedReportPath,
+    designReportPath,
+    dashboardPath,
     suiteName,
   ]);
 } else {
