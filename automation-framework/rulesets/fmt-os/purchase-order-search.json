@@ -1,0 +1,196 @@
+{
+  "feature": "Purchase Order Search",
+  "product": "fmt-os",
+  "version": "1.0",
+  "author": "Automation Team",
+  "created_at": "2026-04-14",
+  "status": "draft",
+
+  "design": {
+    "description": "Search validation for the Purchase Order screen in FMT OS, including no-match behavior across tabs and input edge cases.",
+    "url_pattern": "/procurement/purchase-order",
+    "entry_points": [
+      "Sidebar > Procurement > Purchase Order"
+    ],
+    "ui_components": [
+      "Search bar",
+      "Tab: Review PO",
+      "Tab: Map SO",
+      "Tab: In Progress",
+      "Tab: Completed",
+      "Tab: All",
+      "Tab-specific empty state primary text"
+    ]
+  },
+
+  "flows": [
+    {
+      "id": "F1",
+      "name": "Search bar visibility and input acceptance",
+      "tag": "@smoke",
+      "priority": "critical",
+      "steps": [
+        "User opens Purchase Order screen",
+        "Search bar is visible",
+        "User types a non-matching search string",
+        "Entered text remains visible in the input"
+      ]
+    },
+    {
+      "id": "F2",
+      "name": "Non-matching search across all tabs",
+      "tag": "@smoke",
+      "priority": "critical",
+      "steps": [
+        "User types random non-matching text in the search bar",
+        "Review PO shows 'No purchase orders to review'",
+        "Map SO shows 'No purchase orders to map'",
+        "In Progress shows 'No purchase orders in progress'",
+        "Completed shows 'No completed purchase orders'",
+        "All shows 'No purchase orders found'",
+        "Search value remains applied across all tab switches"
+      ]
+    },
+    {
+      "id": "F3",
+      "name": "Search from non-default tab",
+      "tag": "@regression",
+      "priority": "high",
+      "steps": [
+        "User opens the Map SO tab",
+        "User types random non-matching text",
+        "Map SO remains the active tab",
+        "Map SO empty state is displayed"
+      ]
+    },
+    {
+      "id": "F4",
+      "name": "Special-character search",
+      "tag": "@regression",
+      "priority": "high",
+      "steps": [
+        "User types '@#$%' in the search bar",
+        "Input is accepted",
+        "Screen remains stable",
+        "Review PO empty state is displayed"
+      ]
+    },
+    {
+      "id": "F5",
+      "name": "Long-text search",
+      "tag": "@regression",
+      "priority": "high",
+      "steps": [
+        "User types a long search string",
+        "Input is accepted",
+        "Screen remains stable",
+        "Review PO empty state is displayed"
+      ]
+    },
+    {
+      "id": "F6",
+      "name": "Whitespace-only search",
+      "tag": "@regression",
+      "priority": "medium",
+      "steps": [
+        "User types only whitespace in the search bar",
+        "Screen remains stable",
+        "All tabs remain visible",
+        "Review PO remains active"
+      ]
+    },
+    {
+      "id": "F7",
+      "name": "Clear search behavior",
+      "tag": "@regression",
+      "priority": "high",
+      "steps": [
+        "User types random non-matching text",
+        "User clears the search input",
+        "Search bar becomes empty",
+        "All tabs remain visible"
+      ]
+    },
+    {
+      "id": "F8",
+      "name": "Leading/trailing spaces are trimmed",
+      "tag": "@regression",
+      "priority": "high",
+      "steps": [
+        "User types text with spaces at both ends",
+        "Search input value is trimmed by the system",
+        "Expected no-data message is still shown on active tab"
+      ]
+    }
+  ],
+
+  "logic": {
+    "business_rules": [
+      "Search operates within the currently active Purchase Order tab.",
+      "A non-matching search should show the empty state relevant to the active tab.",
+      "Search text should persist in the search input while switching tabs unless it is cleared by the user.",
+      "Search should safely handle special characters, long text, and whitespace-only input.",
+      "Clearing the search input should reset the input state without breaking the Purchase Order screen.",
+      "Leading and trailing spaces in search input should be trimmed."
+    ],
+    "validations": [
+      "Search bar must be visible on the Purchase Order screen.",
+      "Search bar value must match the user-entered input.",
+      "Expected empty-state primary message must match the active tab.",
+      "Active tab should remain correct when searching from a non-default tab.",
+      "All tabs should remain visible after whitespace-only search and after clearing search.",
+      "Search input should remove leading/trailing spaces from text values."
+    ],
+    "edge_cases": [
+      "Special-character input",
+      "Long-text input",
+      "Whitespace-only input",
+      "Clearing search after a no-match query",
+      "Searching from a non-default tab",
+      "Leading/trailing spaces around search text"
+    ]
+  },
+
+  "selector_hints": [
+    { "element": "Search bar", "suggested_selector": "input[placeholder='Search by PO#, Supplier Name & ID']", "notes": "Current automation selector" },
+    { "element": "Tab: Review PO", "suggested_selector": "[role='tab']:has-text('Review PO')", "notes": "Current automation selector" },
+    { "element": "Tab: Map SO", "suggested_selector": "[role='tab']:has-text('Map SO')", "notes": "Current automation selector" },
+    { "element": "Tab: In Progress", "suggested_selector": "[role='tab']:has-text('In Progress')", "notes": "Current automation selector" },
+    { "element": "Tab: Completed", "suggested_selector": "[role='tab']:has-text('Completed')", "notes": "Current automation selector" },
+    { "element": "Tab: All", "suggested_selector": "[role='tab']:has-text('All')", "notes": "Current automation selector" }
+  ],
+
+  "test_data": {
+    "search": {
+      "random_text": "xyzabc123notexist",
+      "special_characters": "@#$%",
+      "long_text": "purchase-order-search-validation-string-1234567890-long-input",
+      "whitespace": "   ",
+      "trim_input": "  trim-check-123  ",
+      "trim_expected": "trim-check-123"
+    },
+    "expected_empty_states": {
+      "Review PO": {
+        "primary": "No purchase orders to review"
+      },
+      "Map SO": {
+        "primary": "No purchase orders to map"
+      },
+      "In Progress": {
+        "primary": "No purchase orders in progress"
+      },
+      "Completed": {
+        "primary": "No completed purchase orders"
+      },
+      "All": {
+        "primary": "No purchase orders found"
+      }
+    }
+  },
+
+  "dependencies": {
+    "requires_login": true,
+    "required_role": "procurement user",
+    "prerequisite_features": ["login", "purchase-order-page"]
+  }
+}
