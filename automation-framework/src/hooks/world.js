@@ -1,3 +1,4 @@
+import fs from 'fs';
 import { setWorldConstructor, World } from '@cucumber/cucumber';
 import { chromium, firefox, webkit } from 'playwright';
 import config from '../config/env.config.js';
@@ -51,23 +52,26 @@ const oauthContinueStrategies = [
 ];
 
 /**
- * @param {{ useBundledChromium?: boolean }} [options] If true, omit system Chrome path (Playwright Chromium — better for CI / CDP smoke).
+ * @param {{ useBundledChromium?: boolean }} [options]
  */
 async function createSharedBrowserContextPage(options = {}) {
   const { useBundledChromium = false } = options;
   const browserType = { chromium, firefox, webkit }[config.browser.type] || chromium;
+  const chromePath =
+    process.env.CHROME_EXECUTABLE_PATH ||
+    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 
-  const launchOpts = {
+  const launchOptions = {
     headless: config.browser.headless,
     slowMo: config.browser.headless ? 0 : 50,
     args: ['--no-first-run', '--no-default-browser-check'],
   };
-  if (!useBundledChromium) {
-    launchOpts.executablePath = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+
+  if (!useBundledChromium && config.browser.type === 'chromium' && fs.existsSync(chromePath)) {
+    launchOptions.executablePath = chromePath;
   }
 
-  shared.browser = await browserType.launch(launchOpts);
-
+  shared.browser = await browserType.launch(launchOptions);
   shared.context = await shared.browser.newContext({
     viewport: { width: 1366, height: 768 },
     ignoreHTTPSErrors: true,
@@ -78,15 +82,11 @@ async function createSharedBrowserContextPage(options = {}) {
   shared.page = await shared.context.newPage();
 }
 
-/**
- * Launches Chrome and completes Google SSO login.
- */
 export async function launchAndLogin(product) {
   await createSharedBrowserContextPage();
   await performGoogleSSO(config.products[product].baseUrl);
 }
 
-/** Same browser setup as login flow, without navigating (for CDP smoke test). Uses bundled Chromium. */
 export async function launchBrowserWithoutLogin() {
   await createSharedBrowserContextPage({ useBundledChromium: true });
 }
@@ -140,7 +140,6 @@ async function performGoogleSSO(baseUrl) {
       ...heal,
       perTryTimeout: 8000,
     });
-    // Avoid hard sleeps; wait until password UI is ready (or proceed if Google fast-paths).
     await Promise.race([
       page
         .locator('input[name="Passwd"], input[type="password"]')
@@ -150,7 +149,7 @@ async function performGoogleSSO(baseUrl) {
       page.waitForURL(/challenge\/pwd|signin\/v2\/challenge\/pwd/i, { timeout: 8000 }).catch(() => {}),
     ]);
   } catch {
-    /* already past email (e.g. account chooser went straight to password) */
+    // Already past email entry.
   }
 
   await fillFirstMatching(page, passwordFieldStrategies, password, {
@@ -188,6 +187,13 @@ export async function closeSharedBrowser() {
 }
 
 class CustomWorld extends World {
+  constructor(options) {
+    super(options);
+    this.scenarioData = {};
+    this.currentProduct = null;
+    this.designAuditContext = null;
+  }
+
   get page() {
     return shared.page;
   }

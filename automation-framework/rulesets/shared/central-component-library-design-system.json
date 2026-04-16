@@ -1,0 +1,490 @@
+{
+  "ruleset": "Central Component Library Design System",
+  "scope": "shared",
+  "source_library": "@farmart-engineering/central-component-library",
+  "library_version": "1.6.7",
+  "author": "OpenAI Codex (AI-assisted draft)",
+  "created_at": "2026-04-14",
+  "status": "draft",
+  "overview": {
+    "description": "Shared design-system governance rules for validating product screens against the FarMart central component library and its Storybook documentation.",
+    "based_on": [
+      "central-component-library/src/index.tsx",
+      "central-component-library/src/patterns/index.ts",
+      "central-component-library/stories/**",
+      "central-component-library/src/theme/index.ts",
+      "central-component-library/src/theme/themeTokens.ts",
+      "central-component-library/src/utils/DesignVariantsUtils.tsx"
+    ]
+  },
+  "scope_rules": {
+    "in_scope": [
+      "Product screens that use components exported from the central component library public API",
+      "Component-level compliance for atoms, molecules, organisms, templates, and documented library components",
+      "Storybook-documented component, variant, and state validation",
+      "Design token usage for spacing, radius, typography, and palette",
+      "UX consistency where approved library patterns already exist",
+      "Documentation governance gaps for exported but undocumented components",
+      "Production observer rules for classifying documented, undocumented, and bypassed components"
+    ],
+    "limited_scope": [
+      "Exported public components with no direct Storybook coverage can be checked only with rule-based validation and governance-gap reporting",
+      "Exact visual comparison is allowed only for direct Storybook story targets"
+    ],
+    "out_of_scope": [
+      "Full screen-level pixel-perfect compliance using Storybook alone",
+      "Backend logic validation",
+      "Business workflow correctness outside the documented UI scope",
+      "Product usage inventory without live observation or code analysis"
+    ]
+  },
+  "coverage_snapshot": {
+    "public_runtime_exports": 95,
+    "direct_storybook_story_targets": 65,
+    "exported_but_not_directly_documented": 30,
+    "documented_components": [
+      "Accordion",
+      "AccordionAdvanced",
+      "AccordionGroup",
+      "Alert",
+      "AspectRatio",
+      "Audio",
+      "Autocomplete",
+      "Avatar",
+      "BaseErrorTemplate",
+      "BottomSheet",
+      "Breadcrumbs",
+      "Button",
+      "Card",
+      "CheckBox",
+      "Chip",
+      "CircularProgress",
+      "ConfirmationModal",
+      "CustomDataGrid",
+      "DataTable",
+      "DatePicker",
+      "DetailCard",
+      "DetailPageTemplate",
+      "DetailsCard",
+      "Divider",
+      "DocCard",
+      "DocCardV2",
+      "DocumentRenderer",
+      "Drawer",
+      "DynamicAvatar",
+      "DynamicSelect",
+      "ErrorTemplate",
+      "FormField",
+      "FormattedTypography",
+      "IconButton",
+      "Image",
+      "InfoBlock",
+      "Input",
+      "KeyValue",
+      "KeyValueCard",
+      "LinearProgress",
+      "ListItem",
+      "MetricProgressBar",
+      "Modal",
+      "MultiLevelSelect",
+      "MultiSelect",
+      "NestedKeyValue",
+      "Radio",
+      "RadioButton",
+      "SearchBar",
+      "Select",
+      "Skeleton",
+      "Slider",
+      "SnackBar",
+      "Stepper",
+      "Switch",
+      "TabBar",
+      "Table",
+      "Tabs",
+      "Textarea",
+      "Ticker",
+      "ToggleButtonGroup",
+      "Tooltip",
+      "Typography",
+      "UrlEmbeddedModal",
+      "Video"
+    ],
+    "undocumented_exports": [
+      "AccordionDetails",
+      "AutocompleteListbox",
+      "AutocompleteOption",
+      "BottomSheetProvider",
+      "Box",
+      "Column",
+      "DocumentViewerEvent",
+      "Grid",
+      "ImageSlider",
+      "Label",
+      "Link",
+      "List",
+      "ListDivider",
+      "ListItemButton",
+      "ListItemContent",
+      "ListItemDecorator",
+      "ListSubheader",
+      "LoginTemplate",
+      "MultiLevelSelectV2",
+      "Option",
+      "Row",
+      "Sheet",
+      "Stack",
+      "Step",
+      "StepButton",
+      "StepIndicator",
+      "Tab",
+      "TabList",
+      "TabPanel",
+      "ToastProvider"
+    ]
+  },
+  "source_of_truth_rules": {
+    "primary_sources": [
+      "central-component-library/src/index.tsx",
+      "central-component-library/src/patterns/index.ts",
+      "central-component-library/stories/**",
+      "central-component-library/src/theme/index.ts",
+      "central-component-library/src/theme/themeTokens.ts",
+      "central-component-library/src/utils/DesignVariantsUtils.tsx"
+    ],
+    "source_priority": [
+      "Direct Storybook story target",
+      "Theme and token definitions",
+      "Public component export contract",
+      "Approved product baseline only if Storybook coverage is missing"
+    ],
+    "rules": [
+      "A component is considered documented only if it is the direct target of a Storybook story",
+      "A component used only as a helper inside another story is not considered directly documented",
+      "A component exported from the public API but not documented in Storybook must be flagged as a documentation governance gap",
+      "A product implementation that recreates an existing public component with custom code must be flagged as a design-system bypass",
+      "A variant or state used in product but not represented in Storybook must be flagged as a variant or state documentation gap"
+    ]
+  },
+  "design_rules_and_regulations": {
+    "public_api_usage": [
+      "Product teams must use public components exported from the central component library where an approved library component already exists",
+      "Product teams should use the highest suitable abstraction available: templates before organisms, organisms before molecules, molecules before atoms"
+    ],
+    "token_usage": [
+      "Spacing must follow the library spacing function: 0.25rem multiplied by factor",
+      "Radius must use the approved token scale: none, xs, sm, md, lg, xl, xl2, xl3, circular",
+      "Typography must use the approved library font family: Noto Sans, sans-serif",
+      "Typography should stay within the approved font-size, font-weight, and line-height system from the central theme",
+      "Custom typography tokens such as label-sm, label-md, and body-xxs must be used consistently where applicable"
+    ],
+    "variant_rules": [
+      "Allowed designVariant grammar uses variant values plain, outlined, soft, solid",
+      "Allowed designVariant grammar uses size values sm, md, lg",
+      "Allowed designVariant grammar uses color values primary, neutral, danger, success, warning",
+      "Product implementations must not use undocumented designVariant combinations unless explicitly approved"
+    ],
+    "documentation_rules": [
+      "Public visual components should not be considered complete until they have direct Storybook documentation",
+      "Public subcomponents such as TabPanel, StepButton, AccordionDetails, or AutocompleteOption must either have direct Storybook docs or be explicitly documented in parent component stories",
+      "Public providers and API-style exports such as ToastProvider, BottomSheetProvider, or DocumentViewerEvent must have usage documentation even if they do not have visual stories"
+    ],
+    "styling_rules": [
+      "Product implementations should inherit from the central theme instead of arbitrary local styling",
+      "Hardcoded values should not replace approved spacing, radius, typography, or palette tokens without explicit approval"
+    ]
+  },
+  "design_ux_rules": {
+    "pattern_usage": [
+      "Navigation should prefer documented library patterns such as Breadcrumbs, TabBar, Tabs, and Drawer",
+      "Form UX should prefer documented inputs and form patterns such as Input, Select, Autocomplete, MultiSelect, Radio, Switch, CheckBox, DatePicker, and FormField",
+      "Primary and secondary actions should use documented Button patterns rather than ad hoc CTA styling",
+      "Data and content display should prefer patterns such as Table, DataTable, CustomDataGrid, Accordion, KeyValue, ListItem, and SearchBar",
+      "Feedback and recovery flows should prefer documented patterns such as CircularProgress, LinearProgress, SnackBar, Modal, ConfirmationModal, ErrorTemplate, and BaseErrorTemplate"
+    ],
+    "template_rules": [
+      "If a library template exists, such as DetailPageTemplate, LoginTemplate, or ErrorTemplate, product teams should not rebuild the same user flow inconsistently without approval"
+    ],
+    "state_rules": [
+      "Relevant component states must be complete and usable: default, selected or active, expanded or collapsed, disabled, loading, empty, success, error, hover or focus where meaningful",
+      "If Storybook shows a state or variant, product should support it consistently when the component is used in the same context",
+      "If a product omits an expected state for a public component, the system must flag a UX consistency issue"
+    ],
+    "readability_and_hierarchy": [
+      "Text should use Typography or FormattedTypography patterns rather than arbitrary typographic styling",
+      "Components that affect core flows such as search, selection, stepper progression, modals, bottom sheets, and confirmation patterns must preserve documented interaction expectations",
+      "If a screen uses a custom pattern where a documented library pattern already exists, the system must flag both UX inconsistency and design-system inconsistency"
+    ]
+  },
+  "production_observer_rules": {
+    "live_classification": [
+      "Documented library component",
+      "Undocumented public library export",
+      "Non-library custom component"
+    ],
+    "mapping_rules": [
+      "The observer must map live components back to the root public API whenever possible",
+      "For documented library components, compare live implementation against Storybook story target, documented variants and states, and central theme/token values",
+      "For undocumented public exports, run rule-based validation and flag a documentation governance gap",
+      "For custom replacements where a library component exists, flag a design-system bypass"
+    ],
+    "capture_requirements": [
+      "Screenshots",
+      "DOM structure",
+      "Computed styles",
+      "Accessible names and labels",
+      "Interaction states",
+      "Viewport size",
+      "Theme context where relevant"
+    ],
+    "validation_requirements": [
+      "Validate token usage for spacing, padding, radius, typography, and palette",
+      "Validate allowed variant grammar where designVariant, variant, size, or color are part of the component API",
+      "Validate relevant state behavior: hover, focus, active or selected, disabled, loading, error, empty, expanded or collapsed",
+      "Validate responsive behavior across approved viewport sizes"
+    ],
+    "finding_labels": [
+      "Documented mismatch",
+      "Documented match",
+      "Documentation gap",
+      "Variant or state gap",
+      "Design-system bypass",
+      "Rule-based finding",
+      "Heuristic supplement"
+    ],
+    "output_requirements": [
+      "Component name",
+      "Storybook status",
+      "Issue category",
+      "Severity",
+      "Confidence",
+      "Evidence",
+      "Recommended next action"
+    ]
+  },
+  "automation_config": {
+    "non_blocking": true,
+    "expected_font_family": "Noto Sans",
+    "spacing_step_px": 4,
+    "spacing_tolerance_px": 1,
+    "radius_scale_px": [0, 2, 4, 8, 12, 16, 20, 24, 1000],
+    "radius_tolerance_px": 1,
+    "max_elements_per_audit": 40,
+    "observer_selectors": {
+      "interactive": "button, [role='button'], [role='tab'], input, textarea, select",
+      "images": "img",
+      "external_links": "a[target='_blank']"
+    },
+    "component_detection_scope_selector": "button, [role='button'], [role='tab'], [role='tablist'], [role='dialog'], [role='grid'], [role='table'], input, textarea, select, nav[aria-label*='breadcrumb' i], [class*='MuiCard-root'], [class*='MuiChip-root'], [class*='MuiAccordion-root'], [class*='MuiAvatar-root'], [class*='MuiListItemButton-root'], [class*='MuiLinearProgress-root'], [class*='MuiCircularProgress-root']",
+    "component_detection_rules": [
+      {
+        "component_name": "SearchBar",
+        "selector": "input[placeholder*='search' i], input[type='search'], [role='searchbox']",
+        "priority": 120,
+        "confidence_score": 0.95,
+        "allow_variant_mix": false
+      },
+      {
+        "component_name": "Autocomplete",
+        "selector": "input[role='combobox'][aria-autocomplete], [class*='MuiAutocomplete-root'] input",
+        "priority": 115,
+        "confidence_score": 0.92,
+        "allow_variant_mix": false
+      },
+      {
+        "component_name": "Select",
+        "selector": "[role='combobox'][class*='MuiSelect-button'], button[class*='MuiSelect-button']",
+        "priority": 110,
+        "confidence_score": 0.92,
+        "allow_variant_mix": false
+      },
+      {
+        "component_name": "Tabs",
+        "selector": "[role='tablist'], [class*='MuiTabList-root']",
+        "priority": 105,
+        "confidence_score": 0.95,
+        "allow_variant_mix": true
+      },
+      {
+        "component_name": "Tab",
+        "selector": "[role='tab'], [class*='MuiTab-root']",
+        "priority": 104,
+        "confidence_score": 0.95,
+        "allow_variant_mix": true
+      },
+      {
+        "component_name": "IconButton",
+        "selector": "button[class*='MuiIconButton-root'], [role='button'][class*='MuiIconButton-root']",
+        "priority": 100,
+        "confidence_score": 0.92,
+        "allow_variant_mix": true
+      },
+      {
+        "component_name": "MenuButton",
+        "selector": "button[class*='MuiMenuButton-root'], [role='button'][class*='MuiMenuButton-root']",
+        "priority": 99,
+        "confidence_score": 0.85,
+        "allow_variant_mix": false
+      },
+      {
+        "component_name": "Button",
+        "selector": "button:not([role='tab']):not([class*='MuiIconButton-root']):not([class*='MuiMenuButton-root']), [role='button'][class*='MuiButton-root']:not([class*='MuiIconButton-root']):not([class*='MuiMenuButton-root'])",
+        "priority": 95,
+        "confidence_score": 0.88,
+        "allow_variant_mix": false
+      },
+      {
+        "component_name": "ListItemButton",
+        "selector": "[role='button'][class*='MuiListItemButton-root'], [class*='MuiListItemButton-root'][role='button']",
+        "priority": 92,
+        "confidence_score": 0.9,
+        "allow_variant_mix": true
+      },
+      {
+        "component_name": "Input",
+        "selector": "input[class*='MuiInput-input']:not([class*='MuiSelect-nativeInput']):not([placeholder*='search' i]):not([role='combobox']), input:not([class*='MuiSelect-nativeInput']):not([type='checkbox']):not([type='radio']):not([type='search']):not([role='combobox']):not([placeholder*='search' i])",
+        "priority": 90,
+        "confidence_score": 0.86,
+        "allow_variant_mix": false
+      },
+      {
+        "component_name": "Textarea",
+        "selector": "textarea, [class*='MuiTextarea-textarea']",
+        "priority": 89,
+        "confidence_score": 0.9,
+        "allow_variant_mix": false
+      },
+      {
+        "component_name": "CheckBox",
+        "selector": "input[type='checkbox'], [role='checkbox']",
+        "priority": 88,
+        "confidence_score": 0.9,
+        "allow_variant_mix": true
+      },
+      {
+        "component_name": "RadioButton",
+        "selector": "input[type='radio'], [role='radio']",
+        "priority": 87,
+        "confidence_score": 0.9,
+        "allow_variant_mix": true
+      },
+      {
+        "component_name": "Switch",
+        "selector": "[role='switch'], input[class*='MuiSwitch-input']",
+        "priority": 86,
+        "confidence_score": 0.9,
+        "allow_variant_mix": true
+      },
+      {
+        "component_name": "Breadcrumbs",
+        "selector": "nav[aria-label*='breadcrumb' i], [class*='MuiBreadcrumbs-root']",
+        "priority": 82,
+        "confidence_score": 0.9,
+        "allow_variant_mix": true
+      },
+      {
+        "component_name": "DataTable",
+        "selector": "[class*='MuiDataGrid-root']",
+        "priority": 80,
+        "confidence_score": 0.9,
+        "allow_variant_mix": true
+      },
+      {
+        "component_name": "Table",
+        "selector": "table, [role='table'], [class*='MuiTable-root']",
+        "priority": 79,
+        "confidence_score": 0.9,
+        "allow_variant_mix": true
+      },
+      {
+        "component_name": "Card",
+        "selector": "[class*='MuiCard-root']",
+        "priority": 77,
+        "confidence_score": 0.88,
+        "allow_variant_mix": true
+      },
+      {
+        "component_name": "Chip",
+        "selector": "[class*='MuiChip-root']",
+        "priority": 76,
+        "confidence_score": 0.88,
+        "allow_variant_mix": true
+      },
+      {
+        "component_name": "Accordion",
+        "selector": "[class*='MuiAccordion-root']",
+        "priority": 75,
+        "confidence_score": 0.88,
+        "allow_variant_mix": true
+      },
+      {
+        "component_name": "Avatar",
+        "selector": "[class*='MuiAvatar-root']",
+        "priority": 74,
+        "confidence_score": 0.88,
+        "allow_variant_mix": true
+      },
+      {
+        "component_name": "Modal",
+        "selector": "[class*='MuiModalDialog-root'], [class*='MuiDialog-root']:not([class*='MuiDrawer'])",
+        "priority": 73,
+        "confidence_score": 0.9,
+        "allow_variant_mix": true
+      },
+      {
+        "component_name": "Drawer",
+        "selector": "[class*='MuiDrawer-root'], [data-testid*='drawer' i]",
+        "priority": 72,
+        "confidence_score": 0.88,
+        "allow_variant_mix": true
+      },
+      {
+        "component_name": "SnackBar",
+        "selector": "[class*='MuiSnackbar-root'], [role='alert'][class*='MuiSnackbar']",
+        "priority": 71,
+        "confidence_score": 0.88,
+        "allow_variant_mix": true
+      },
+      {
+        "component_name": "LinearProgress",
+        "selector": "[role='progressbar'][class*='MuiLinearProgress-root']",
+        "priority": 70,
+        "confidence_score": 0.88,
+        "allow_variant_mix": true
+      },
+      {
+        "component_name": "CircularProgress",
+        "selector": "[role='progressbar'][class*='MuiCircularProgress-root']",
+        "priority": 69,
+        "confidence_score": 0.88,
+        "allow_variant_mix": true
+      }
+    ],
+    "security_patterns": [
+      {
+        "name": "GitHub Personal Access Token",
+        "regex": "ghp_[A-Za-z0-9]{20,}"
+      },
+      {
+        "name": "Slack Token",
+        "regex": "xox[baprs]-[A-Za-z0-9-]{10,}"
+      },
+      {
+        "name": "OpenAI Style Secret",
+        "regex": "sk-[A-Za-z0-9]{20,}"
+      },
+      {
+        "name": "Google API Key Style Secret",
+        "regex": "AIza[0-9A-Za-z\\-_]{20,}"
+      }
+    ]
+  },
+  "dependencies": {
+    "requires_component_source": true,
+    "requires_storybook_source": true,
+    "primary_story_source": "central-component-library/stories/**",
+    "primary_public_api_source": "central-component-library/src/index.tsx",
+    "primary_theme_source": "central-component-library/src/theme/index.ts",
+    "primary_token_source": "central-component-library/src/theme/themeTokens.ts",
+    "primary_variant_grammar_source": "central-component-library/src/utils/DesignVariantsUtils.tsx"
+  }
+}

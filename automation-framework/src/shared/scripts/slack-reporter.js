@@ -3,28 +3,42 @@
  * Reads a Cucumber JSON report and posts a formatted summary to Slack.
  * Triggered automatically after every test run via package.json scripts.
  *
- * Usage: node src/shared/scripts/slack-reporter.js <report.json> <suite-name>
+ * Usage: node src/shared/scripts/slack-reporter.js <report.json> <suite-name> [design-report.json]
  */
 
 import fs from 'fs';
 import path from 'path';
 import fetch from 'node-fetch';
 import dotenv from 'dotenv';
+import { fileURLToPath } from 'url';
 import { getSelfHealDriftLogPath } from '../locators/fallback-locator.js';
 import { getSelectorReportPath, getSelectorSummaryPath } from '../locators/selector-intelligence.js';
 
 dotenv.config({ path: new URL('../../../.env', import.meta.url).pathname });
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const projectRoot = path.resolve(__dirname, '../../..');
 const WEBHOOK_URL = process.env.SLACK_WEBHOOK_URL;
-const [, , reportPath, suiteName = 'Automation'] = process.argv;
+const SLACK_BOT_TOKEN = process.env.SLACK_BOT_TOKEN;
+const SLACK_CHANNEL_ID = process.env.SLACK_CHANNEL_ID;
+const [, , reportPath, suiteName = 'Automation', designAuditPath] = process.argv;
 
-if (!WEBHOOK_URL) {
-  console.error('Missing SLACK_WEBHOOK_URL in .env');
+const resolveProjectPath = (inputPath) => {
+  if (!inputPath) return '';
+  return path.isAbsolute(inputPath) ? inputPath : path.resolve(projectRoot, inputPath);
+};
+
+const resolvedReportPath = resolveProjectPath(reportPath);
+const inferredDesignAuditPath = resolvedReportPath?.replace(/\.json$/i, '.design.json');
+const resolvedDesignAuditPath = resolveProjectPath(designAuditPath || inferredDesignAuditPath);
+
+if (!WEBHOOK_URL && !(SLACK_BOT_TOKEN && SLACK_CHANNEL_ID)) {
+  console.error('Missing Slack configuration. Provide SLACK_WEBHOOK_URL, or SLACK_BOT_TOKEN + SLACK_CHANNEL_ID.');
   process.exit(1);
 }
 
-if (!reportPath || !fs.existsSync(reportPath)) {
-  console.error(`Report not found: ${reportPath}`);
+if (!resolvedReportPath || !fs.existsSync(resolvedReportPath)) {
+  console.error(`Report not found: ${resolvedReportPath || reportPath}`);
   process.exit(1);
 }
 
@@ -36,25 +50,83 @@ function countSelfHealDriftEvents() {
   return raw.split('\n').filter(Boolean).length;
 }
 
-/** Rows from `selector-resolution-report.json` (fallback + cache reorder). */
 function loadSelectorResolutionReport() {
-  const p = getSelectorReportPath();
-  if (!fs.existsSync(p)) return [];
+  const reportPathForSelectors = getSelectorReportPath();
+  if (!fs.existsSync(reportPathForSelectors)) return [];
   try {
-    const j = JSON.parse(fs.readFileSync(p, 'utf8'));
-    return Array.isArray(j) ? j : [];
+    const parsed = JSON.parse(fs.readFileSync(reportPathForSelectors, 'utf8'));
+    return Array.isArray(parsed) ? parsed : [];
   } catch {
     return [];
   }
 }
 
-/** Optional file written by developers after MCP investigation; included in Slack when present. */
 function parseReport(filePath) {
-  let features;
   try {
-    const raw = fs.readFileSync(filePath, 'utf-8');
-    features = JSON.parse(raw);
-  } catch (err) {
+    const raw = fs.readFileSync(filePath, 'utf-8').trim();
+    if (!raw) {
+      return {
+        totalScenarios: 0,
+        passed: 0,
+        failed: 0,
+        totalSteps: 0,
+        passedSteps: 0,
+        failedSteps: 0,
+        durationSec: '0.0',
+        passRate: 0,
+        failures: [],
+      };
+    }
+
+    const features = JSON.parse(raw);
+    let totalScenarios = 0;
+    let passed = 0;
+    let failed = 0;
+    let totalSteps = 0;
+    let passedSteps = 0;
+    let failedSteps = 0;
+    let totalDurationNs = 0;
+    const failures = [];
+
+    for (const feature of features) {
+      for (const scenario of feature.elements || []) {
+        totalScenarios += 1;
+        let scenarioFailed = false;
+
+        for (const step of scenario.steps || []) {
+          totalSteps += 1;
+          totalDurationNs += step.result?.duration || 0;
+
+          if (step.result?.status === 'passed') {
+            passedSteps += 1;
+          } else if (step.result?.status === 'failed') {
+            failedSteps += 1;
+            scenarioFailed = true;
+            failures.push({
+              feature: feature.name,
+              scenario: scenario.name,
+              step: step.name,
+              error: (step.result?.error_message || '').split('\n')[0].trim().slice(0, 120),
+            });
+          }
+        }
+
+        scenarioFailed ? failed++ : passed++;
+      }
+    }
+
+    return {
+      totalScenarios,
+      passed,
+      failed,
+      totalSteps,
+      passedSteps,
+      failedSteps,
+      durationSec: (totalDurationNs / 1e9).toFixed(1),
+      passRate: totalScenarios > 0 ? Math.round((passed / totalScenarios) * 100) : 0,
+      failures,
+    };
+  } catch (error) {
     return {
       totalScenarios: 0,
       passed: 0,
@@ -69,57 +141,203 @@ function parseReport(filePath) {
           feature: 'N/A',
           scenario: 'N/A',
           step: 'Report generation',
-          error: `Unable to parse JSON report. Cucumber may have failed before writing it. (${String(err?.message || err).slice(0, 120)})`,
+          error: `Unable to parse JSON report. ${String(error?.message || error).slice(0, 120)}`,
         },
       ],
-      reportParseError: true,
     };
   }
-  let totalScenarios = 0, passed = 0, failed = 0;
-  let totalSteps = 0, passedSteps = 0, failedSteps = 0;
-  let totalDurationNs = 0;
-  const failures = [];
+}
 
-  for (const feature of features) {
-    for (const scenario of feature.elements || []) {
-      totalScenarios++;
-      let scenarioFailed = false;
+function parseDesignAudit(filePath) {
+  if (!filePath || !fs.existsSync(filePath)) {
+    return null;
+  }
 
-      for (const step of scenario.steps || []) {
-        totalSteps++;
-        totalDurationNs += step.result?.duration || 0;
+  try {
+    return JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+  } catch {
+    return null;
+  }
+}
 
-        if (step.result?.status === 'passed') {
-          passedSteps++;
-        } else if (step.result?.status === 'failed') {
-          failedSteps++;
-          scenarioFailed = true;
-          failures.push({
-            feature: feature.name,
-            scenario: scenario.name,
-            step: step.name,
-            error: (step.result?.error_message || '').split('\n')[0].trim().slice(0, 120),
-          });
-        }
+function summarizeDesignFindings(designAudit, limit = 4) {
+  const grouped = new Map();
+
+  for (const scenario of designAudit?.scenarios || []) {
+    for (const finding of scenario.findings || []) {
+      const key = [
+        finding.title,
+        finding.category,
+        finding.report_context?.summary_title || finding.message,
+      ].join('::');
+
+      const existing = grouped.get(key);
+      if (!existing) {
+        grouped.set(key, {
+          ...finding,
+          scenarios: [scenario.scenario_name],
+        });
+        continue;
       }
 
-      scenarioFailed ? failed++ : passed++;
+      existing.scenarios = [...new Set([...existing.scenarios, scenario.scenario_name])];
     }
   }
 
-  return {
-    totalScenarios, passed, failed,
-    totalSteps, passedSteps, failedSteps,
-    durationSec: (totalDurationNs / 1e9).toFixed(1),
-    passRate: totalScenarios > 0 ? Math.round((passed / totalScenarios) * 100) : 0,
-    failures,
-    reportParseError: false,
-  };
+  return Array.from(grouped.values()).slice(0, limit);
 }
 
-function buildPayload(stats, suiteName, selfHealFallbacks, selectorEvents) {
-  const allPassed = stats.failed === 0 && stats.reportParseError !== true;
+function summarizeComponentAnalysis(designAudit) {
+  const components = designAudit?.component_analysis || [];
+  return components
+    .map((component) => ({
+      component_name: component.display_name || component.component_name,
+      instance_count: component.instance_count ?? component.instances_observed ?? 0,
+      match_status: component.match_status || 'Unknown',
+      storybook_status: component.storybook_status || 'unknown',
+    }))
+    .sort((left, right) => right.instance_count - left.instance_count)
+    .slice(0, 12);
+}
+
+function formatComponentNames(names = [], emptyLabel = '—', limit = 20) {
+  if (!Array.isArray(names) || names.length === 0) {
+    return emptyLabel;
+  }
+
+  const visibleNames = names.slice(0, limit);
+  const suffix = names.length > limit ? `  •  +${names.length - limit} more` : '';
+  return `${visibleNames.join('  •  ')}${suffix}`;
+}
+
+function collectDesignEvidenceFiles(designAudit, limit = 10) {
+  const evidenceFiles = [];
+  const seenPaths = new Set();
+
+  for (const finding of summarizeDesignFindings(designAudit, 10)) {
+    const context = finding.report_context || {};
+    const rawPath = context.screenshot_path || finding.evidence?.screenshot_path || '';
+    const resolvedPath = resolveProjectPath(rawPath);
+    if (!resolvedPath || !fs.existsSync(resolvedPath) || seenPaths.has(resolvedPath)) {
+      continue;
+    }
+
+    seenPaths.add(resolvedPath);
+    evidenceFiles.push({
+      filePath: resolvedPath,
+      title: context.summary_title || finding.title || path.basename(resolvedPath),
+      altText: context.possible_real_issue || finding.message || 'Design mismatch evidence',
+      initialComment: [
+        `Design mismatch evidence: ${context.summary_title || finding.title}`,
+        context.pixel_evidence ? `Pixel evidence: ${context.pixel_evidence}` : null,
+      ]
+        .filter(Boolean)
+        .join('\n'),
+    });
+  }
+
+  return evidenceFiles.slice(0, limit);
+}
+
+async function slackApiCall(method, body, options = {}) {
+  const bodyType = options.bodyType || 'json';
+  const headers = {
+    Authorization: `Bearer ${SLACK_BOT_TOKEN}`,
+  };
+
+  let payload = body;
+  if (bodyType === 'form') {
+    headers['Content-Type'] = 'application/x-www-form-urlencoded; charset=utf-8';
+    payload = new URLSearchParams(
+      Object.entries(body || {}).reduce((acc, [key, value]) => {
+        if (value !== undefined && value !== null) {
+          acc[key] = String(value);
+        }
+        return acc;
+      }, {})
+    ).toString();
+  } else {
+    headers['Content-Type'] = 'application/json; charset=utf-8';
+    payload = JSON.stringify(body);
+  }
+
+  const response = await fetch(`https://slack.com/api/${method}`, {
+    method: 'POST',
+    headers,
+    body: payload,
+  });
+
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok || !result.ok) {
+    throw new Error(`Slack API ${method} failed: ${result.error || response.status}`);
+  }
+
+  return result;
+}
+
+async function postMessageWithBot(payload) {
+  return slackApiCall('chat.postMessage', {
+    channel: SLACK_CHANNEL_ID,
+    text: payload.text || `${suiteName} automation report`,
+    attachments: payload.attachments,
+    unfurl_links: false,
+    unfurl_media: false,
+  });
+}
+
+async function postMessageWithWebhook(payload) {
+  const response = await fetch(WEBHOOK_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Slack webhook failed: ${response.status}`);
+  }
+
+  return null;
+}
+
+async function uploadFileToSlackChannel({ filePath, title, initialComment, threadTs = null }) {
+  const fileBuffer = fs.readFileSync(filePath);
+  const filename = path.basename(filePath);
+
+  const uploadTarget = await slackApiCall(
+    'files.getUploadURLExternal',
+    {
+      filename,
+      length: fileBuffer.length,
+    },
+    { bodyType: 'form' }
+  );
+
+  const uploadResponse = await fetch(uploadTarget.upload_url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/octet-stream',
+      'Content-Length': String(fileBuffer.length),
+    },
+    body: fileBuffer,
+  });
+
+  if (!uploadResponse.ok) {
+    throw new Error(`Slack file upload failed: ${uploadResponse.status}`);
+  }
+
+  return slackApiCall('files.completeUploadExternal', {
+    files: [{ id: uploadTarget.file_id, title }],
+    channel_id: SLACK_CHANNEL_ID,
+    ...(threadTs ? { thread_ts: threadTs } : {}),
+    initial_comment: initialComment,
+  });
+}
+
+function buildPayload(stats, suiteName, designAudit, designReportState = {}, selfHealFallbacks = 0, selectorEvents = []) {
+  const allPassed = stats.failed === 0;
   const now = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+  const summary = designAudit?.summary || {};
+  const componentRows = summarizeComponentAnalysis(designAudit);
 
   const blocks = [
     {
@@ -146,7 +364,7 @@ function buildPayload(stats, suiteName, selfHealFallbacks, selectorEvents) {
 
   if (selfHealFallbacks > 0) {
     const driftRel = path.relative(process.cwd(), getSelfHealDriftLogPath()) || 'self-heal-events.jsonl';
-    blocks.splice(2, 0, {
+    blocks.push({
       type: 'section',
       text: {
         type: 'mrkdwn',
@@ -160,58 +378,131 @@ function buildPayload(stats, suiteName, selfHealFallbacks, selectorEvents) {
   if (selectorEvents.length > 0) {
     const reportRel = path.relative(process.cwd(), getSelectorReportPath()) || 'selector-resolution-report.json';
     const summaryRel = path.relative(process.cwd(), getSelectorSummaryPath()) || 'selector-intelligence-summary.md';
-    const fallbackCount = selectorEvents.filter((e) => e.fallbackUsed).length;
-    const cacheReorderCount = selectorEvents.filter((e) => e.reorderedFromCache).length;
-    const allContinued = selectorEvents.every((e) => e.continued !== false);
-    const lines = selectorEvents.slice(0, 8).map((e) => {
-      const kind = e.cdpRecovery ? 'cdp recovery' : e.fallbackUsed ? 'fallback' : 'cache reorder';
-      return `• *\`${e.context}\`* (${kind}): \`${e.originalPrimaryStrategy}\` → \`${e.resolvedStrategy}\``;
-    });
-    if (selectorEvents.length > 8) {
-      lines.push(`_…and ${selectorEvents.length - 8} more (see JSON)._`);
-    }
-    const statusLine = allContinued
-      ? '✅ Automation *continued successfully* after resolving with updated strategy order or fallbacks.'
-      : '⚠️ Some resolution rows may need review (`continued` flag).';
-    blocks.splice(selfHealFallbacks > 0 ? 3 : 2, 0, {
+    const fallbackCount = selectorEvents.filter((event) => event.fallbackUsed).length;
+    const cacheReorderCount = selectorEvents.filter((event) => event.reorderedFromCache).length;
+    blocks.push({
       type: 'section',
       text: {
         type: 'mrkdwn',
         text:
-          `*Selector intelligence*\n` +
-          `${statusLine}\n` +
-          `Events: *${selectorEvents.length}* (fallback: *${fallbackCount}*, cache reorder: *${cacheReorderCount}*).\n` +
-          `${lines.join('\n')}\n` +
+          `*Selector intelligence*\nEvents: *${selectorEvents.length}* (fallback: *${fallbackCount}*, cache reorder: *${cacheReorderCount}*).\n` +
           `_Artifacts: \`${reportRel}\`, \`${summaryRel}\`_`,
       },
     });
   }
 
   if (stats.failures.length > 0) {
-    blocks.push({
-      type: 'section',
-      text: {
-        type: 'mrkdwn',
-        text:
-          '*🔧 Debug workflow*\n' +
-          (stats.reportParseError
-            ? 'Cucumber failed before producing a valid JSON report. Fix the underlying runtime error (browser install, env, hooks) and rerun.'
-            : 'HTML report includes an *Automation debug context* attachment (URL + self-heal info). Check the page-object selectors / fallback strategies and rerun.'),
-      },
-    });
     blocks.push({ type: 'section', text: { type: 'mrkdwn', text: '*❌ Failed Scenarios*' } });
-    for (const f of stats.failures) {
+    for (const failure of stats.failures) {
       blocks.push({
         type: 'section',
         text: {
           type: 'mrkdwn',
-          text: `*Feature:* ${f.feature}\n*Scenario:* ${f.scenario}\n*Step:* \`${f.step}\`\n*Error:* ${f.error}`,
+          text: `*Feature:* ${failure.feature}\n*Scenario:* ${failure.scenario}\n*Step:* \`${failure.step}\`\n*Error:* ${failure.error}`,
         },
       });
     }
     blocks.push({ type: 'divider' });
   }
 
+  blocks.push({
+    type: 'section',
+    text: {
+      type: 'mrkdwn',
+      text: '*🎨 Non-blocking Design Report*\nSeparate from functional status. Design findings do not fail the suite.',
+    },
+  });
+
+  blocks.push({
+    type: 'section',
+    fields: [
+      { type: 'mrkdwn', text: `*No. of Components Used (Rendered Instances)*\n${summary.components_used ?? 0}` },
+      { type: 'mrkdwn', text: `*No. of Components in CCLDS*\n${summary.cclds_component_count ?? 0}` },
+      { type: 'mrkdwn', text: `*Matching Central Component Library*\n${summary.matching_central_component_library ?? 0}` },
+      { type: 'mrkdwn', text: `*Mismatching Central Component Library*\n${summary.mismatching_central_component_library ?? 0}` },
+      { type: 'mrkdwn', text: `*Run Time*\n${summary.runtime_sec ?? 0}s` },
+    ],
+  });
+
+  blocks.push({
+    type: 'section',
+    text: {
+      type: 'mrkdwn',
+      text: `*Matching component names*\n${formatComponentNames(summary.matching_component_names, 'No matching components')}`,
+    },
+  });
+
+  blocks.push({
+    type: 'section',
+    text: {
+      type: 'mrkdwn',
+      text: `*Mismatching component names*\n${formatComponentNames(summary.mismatching_component_names, 'No mismatching components')}`,
+    },
+  });
+
+  const categorySummary = Object.entries(summary.by_category || {})
+    .map(([name, count]) => `${name}: ${count}`)
+    .join('  •  ');
+  const severitySummary = Object.entries(summary.by_severity || {})
+    .map(([name, count]) => `${name}: ${count}`)
+    .join('  •  ');
+
+  blocks.push({
+    type: 'section',
+    fields: [
+      { type: 'mrkdwn', text: `*Findings*\n${summary.total_findings ?? 0}` },
+      { type: 'mrkdwn', text: `*Audited Scenarios*\n${summary.scenarios_audited ?? 0}` },
+      { type: 'mrkdwn', text: `*Categories*\n${categorySummary || '—'}` },
+      { type: 'mrkdwn', text: `*Severity*\n${severitySummary || '—'}` },
+    ],
+  });
+
+  blocks.push({
+    type: 'section',
+    fields: [
+      { type: 'mrkdwn', text: `*Component Types Detected*\n${summary.component_types_detected ?? 0}` },
+      { type: 'mrkdwn', text: `*Variant Components*\n${summary.variant_components ?? 0}` },
+      { type: 'mrkdwn', text: `*Missing Expected Components*\n${summary.missing_expected_components ?? 0}` },
+      { type: 'mrkdwn', text: `*Unmapped Components*\n${summary.unmapped_components ?? 0}` },
+    ],
+  });
+
+  blocks.push({
+    type: 'section',
+    text: {
+      type: 'mrkdwn',
+      text: designReportState.evidence_count > 0
+        ? designReportState.slack_image_upload_enabled
+          ? `*Focused mismatch screenshots*\n${designReportState.evidence_count} screenshot(s) will be attached in this Slack thread for the mismatched design findings.`
+          : '*Focused mismatch screenshots*\nCaptured for the design report, but not attached here because this run is using webhook-only Slack config. Add `SLACK_BOT_TOKEN` and `SLACK_CHANNEL_ID` to attach the focused mismatch screenshots in Slack.'
+        : '*Focused mismatch screenshots*\nNo focused mismatch screenshots were generated in this run.',
+    },
+  });
+
+  const componentTable = [
+    '```',
+    'Component          | Count   | Match      | Library',
+    '-------------------|---------|------------|------------------------',
+    ...componentRows.map((component) =>
+      [
+        String(component.component_name).padEnd(18, ' ').slice(0, 18),
+        String(component.instance_count).padStart(5, ' '),
+        String(component.match_status).padEnd(10, ' ').slice(0, 10),
+        String(component.storybook_status).slice(0, 24),
+      ].join(' | ')
+    ),
+    '```',
+  ].join('\n');
+
+  blocks.push({
+    type: 'section',
+    text: {
+      type: 'mrkdwn',
+      text: `*Component Analysis*\n${componentTable}`,
+    },
+  });
+
+  blocks.push({ type: 'divider' });
   blocks.push({
     type: 'context',
     elements: [{ type: 'mrkdwn', text: `🤖 FarMart Automation  •  ${suiteName}  •  ${now}` }],
@@ -220,17 +511,71 @@ function buildPayload(stats, suiteName, selfHealFallbacks, selectorEvents) {
   return { attachments: [{ color: allPassed ? '#2EB67D' : '#E01E5A', blocks }] };
 }
 
-const stats = parseReport(reportPath);
+const stats = parseReport(resolvedReportPath);
+const designAudit = parseDesignAudit(resolvedDesignAuditPath);
 const selfHealFallbacks = countSelfHealDriftEvents();
 const selectorEvents = loadSelectorResolutionReport();
-const res = await fetch(WEBHOOK_URL, {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify(buildPayload(stats, suiteName, selfHealFallbacks, selectorEvents)),
-});
+const designEvidenceFiles = collectDesignEvidenceFiles(designAudit);
+const designReportState = {
+  path: resolvedDesignAuditPath,
+  found: Boolean(designAudit?.summary),
+  slack_image_upload_enabled: Boolean(SLACK_BOT_TOKEN && SLACK_CHANNEL_ID),
+  evidence_count: designEvidenceFiles.length,
+};
 
-if (!res.ok) throw new Error(`Slack webhook failed: ${res.status}`);
-console.log(
-  `✅ Slack report sent — ${stats.passed}/${stats.totalScenarios} passed` +
-    (selectorEvents.length ? ` (selector intelligence: ${selectorEvents.length} event(s))` : '')
-);
+if (!designAudit && resolvedDesignAuditPath) {
+  console.warn(`Design report not found or invalid: ${resolvedDesignAuditPath}`);
+}
+
+const payload = buildPayload(stats, suiteName, designAudit, designReportState, selfHealFallbacks, selectorEvents);
+let threadTs = null;
+let usedWebhookFallback = false;
+
+if (SLACK_BOT_TOKEN && SLACK_CHANNEL_ID) {
+  try {
+    const postResult = await postMessageWithBot(payload);
+    threadTs = postResult.ts || null;
+  } catch (error) {
+    if (!WEBHOOK_URL) {
+      throw error;
+    }
+
+    console.warn(`Slack bot delivery failed, falling back to webhook-only report: ${error.message}`);
+    usedWebhookFallback = true;
+    await postMessageWithWebhook(payload);
+  }
+
+  if (designEvidenceFiles.length > 0) {
+    for (const evidenceFile of designEvidenceFiles) {
+      try {
+        await uploadFileToSlackChannel({
+          ...evidenceFile,
+          threadTs,
+          initialComment: threadTs
+            ? evidenceFile.initialComment
+            : [
+                evidenceFile.initialComment,
+                usedWebhookFallback
+                  ? 'Shared as standalone design evidence because threaded Slack upload was unavailable for the main report.'
+                  : null,
+              ]
+                .filter(Boolean)
+                .join('\n'),
+        });
+      } catch (error) {
+        console.warn(
+          `Failed to upload design mismatch screenshot to Slack (${path.basename(evidenceFile.filePath)}): ${error.message}`
+        );
+      }
+    }
+  }
+} else {
+  await postMessageWithWebhook(payload);
+  if (designEvidenceFiles.length > 0) {
+    console.warn(
+      'Design mismatch screenshots were not uploaded to Slack. Add SLACK_BOT_TOKEN and SLACK_CHANNEL_ID to enable threaded screenshot uploads.'
+    );
+  }
+}
+
+console.log(`✅ Slack report sent — ${stats.passed}/${stats.totalScenarios} passed`);
