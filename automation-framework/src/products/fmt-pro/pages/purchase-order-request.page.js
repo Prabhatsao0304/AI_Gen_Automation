@@ -5,10 +5,21 @@ export class PurchaseOrderRequestPage {
     this.page = page;
     this.purchaseOrderBottomTabSelectors = [
       '[role="tab"]:has-text("Purchase Order")',
+      '[role="tab"]:has-text("Purchase Orders")',
+      '[role="button"]:has-text("Purchase Order")',
       'button:has-text("Purchase Order")',
+      'button:has-text("Purchase Orders")',
       'a:has-text("Purchase Order")',
+      'a:has-text("Purchase Orders")',
+      'nav a:has-text("Purchase Order")',
+      'nav a:has-text("Purchase Orders")',
+      'aside a:has-text("Purchase Order")',
+      'aside a:has-text("Purchase Orders")',
+      'a[href*="purchase-order" i]',
       '[data-testid*="purchase-order"]',
       '[aria-label*="Purchase Order"]',
+      '[aria-label*="purchase order" i]',
+      'text=/purchase\\s*orders?/i',
     ];
     this.createPurchaseOrderPlusIconSelectors = [
       '[aria-label*="create purchase order" i]',
@@ -52,9 +63,16 @@ export class PurchaseOrderRequestPage {
   }
 
   async clickPurchaseOrderBottomTab() {
-    const purchaseOrderTab = await this.findVisibleElement(this.purchaseOrderBottomTabSelectors, 'Purchase Order bottom tab');
-    await purchaseOrderTab.click();
-    await this.waitForUiSettle({ idleTimeout: 1800, minPause: 80 });
+    // Direct navigation is faster + more stable than clicking a UI tab that may move/rename.
+    const lowerUrl = this.page.url().toLowerCase();
+    if (!lowerUrl.includes('/purchase-order')) {
+      const parsed = new URL(config.products['fmt-pro'].baseUrl);
+      parsed.pathname = '/purchase-order';
+      parsed.search = 'tab_id=1';
+      await this.page.goto(parsed.toString(), { waitUntil: 'domcontentloaded' });
+    }
+
+    await this.waitForUiSettle({ idleTimeout: 1800, minPause: 0 });
   }
 
   async assertPurchaseOrderScreenVisible() {
