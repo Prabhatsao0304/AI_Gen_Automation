@@ -88,6 +88,7 @@ async function performGoogleSSO(baseUrl, credentials) {
   const page = shared.page;
   const { username, password } = credentials;
   const loginUrl = buildLoginUrl(baseUrl);
+  const expectedHostname = new URL(baseUrl).hostname;
 
   await page.goto(loginUrl, { waitUntil: 'domcontentloaded' });
   await page.waitForLoadState('networkidle', { timeout: 2500 }).catch(() => {});
@@ -131,7 +132,7 @@ async function performGoogleSSO(baseUrl, credentials) {
 
   // Wait for app — use hostname check to avoid false match on Google redirect URLs
   await page.waitForURL(
-    (url) => url.hostname.endsWith('farmartos.com') && !url.pathname.includes('/login'),
+    (url) => url.hostname === expectedHostname && !url.pathname.includes('/login'),
     { timeout: 90000 }
   );
 

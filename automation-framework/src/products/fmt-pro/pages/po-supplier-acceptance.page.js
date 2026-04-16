@@ -20,10 +20,11 @@ export class PoSupplierAcceptancePage {
   }
 
   async assertLoggedInToFmtPro() {
+    const expectedHostname = new URL(config.products['fmt-pro'].baseUrl).hostname;
     await this.page.waitForURL(
       (url) => {
         const parsed = new URL(url.toString());
-        return parsed.hostname.endsWith('farmartos.com') && !parsed.pathname.includes('/login');
+        return parsed.hostname === expectedHostname && !parsed.pathname.includes('/login');
       },
       { timeout: 90000 }
     );
