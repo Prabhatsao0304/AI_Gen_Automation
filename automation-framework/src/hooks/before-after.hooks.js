@@ -29,6 +29,7 @@ import {
 import { closeSharedBrowser, launchAndLogin } from './world.js';
 
 setDefaultTimeout(120 * 1000);
+const testProduct = process.env.TEST_PRODUCT || 'fmt-os';
 
 const screenshotDir = path.resolve(process.cwd(), 'screenshots');
 
@@ -37,7 +38,7 @@ BeforeAll(async function () {
   initSelectorIntelligence();
   resetDesignAuditRun();
   console.log('\n  [setup] Launching browser and logging in (once for all scenarios)...');
-  await launchAndLogin('fmt-os');
+  await launchAndLogin(testProduct);
   console.log('  [setup] Login complete — all scenarios will reuse this session.\n');
 });
 

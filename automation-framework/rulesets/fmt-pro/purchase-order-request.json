@@ -1,0 +1,94 @@
+{
+  "feature": "Purchase Order Request",
+  "product": "fmt-pro",
+  "version": "1.0",
+  "author": "Automation Team",
+  "created_at": "2026-04-15",
+  "status": "draft",
+  "design": {
+    "description": "Initial automation checkpoint for Purchase Order Request in FMT PRO: login, open Purchase Order bottom tab, open request form from plus icon, select supplier, and continue with Next.",
+    "url_pattern": "<FMT_PRO_URL>",
+    "entry_points": [
+      "FMT PRO login page"
+    ],
+    "ui_components": [
+      "Bottom tab: Purchase Order",
+      "Bottom-right plus icon to raise purchase order request",
+      "Purchase Order Request form",
+      "Select Supplier dropdown",
+      "Supplier bottom sheet",
+      "Next button"
+    ]
+  },
+  "flows": [
+    {
+      "id": "F1",
+      "name": "Login to FMT PRO, open Purchase Order Request form, select supplier, and continue",
+      "tag": "@smoke",
+      "priority": "critical",
+      "steps": [
+        "Run FMT PRO suite with valid QA credentials from .env",
+        "Ensure user is logged in",
+        "Click Purchase Order bottom tab",
+        "Verify Purchase Order section opens",
+        "Click bottom-right plus icon",
+        "Verify Purchase Order Request form opens",
+        "Open Select Supplier dropdown",
+        "Search and select supplier vimal traders",
+        "Click Next",
+        "Verify Purchase Order Request flow continues"
+      ]
+    }
+  ],
+  "logic": {
+    "business_rules": [
+      "Login completes before scenario actions.",
+      "Purchase Order tab is reachable from the main FMT PRO screen.",
+      "Bottom-right plus icon opens Purchase Order Request form.",
+      "Select Supplier opens a bottom sheet and allows supplier selection.",
+      "Next button continues the purchase order request flow after supplier selection."
+    ],
+    "validations": [
+      "Authenticated session is not on /login URL.",
+      "Purchase Order tab click opens Purchase Order section.",
+      "Plus icon click opens Purchase Order Request form.",
+      "Supplier vimal traders is selected from supplier bottom sheet.",
+      "Next click continues Purchase Order Request flow."
+    ],
+    "edge_cases": []
+  },
+  "selector_hints": [
+    {
+      "element": "Purchase Order bottom tab",
+      "suggested_selector": "[role='tab']:has-text('Purchase Order'), button:has-text('Purchase Order'), a:has-text('Purchase Order')",
+      "notes": "Fallback includes data-testid and aria-label contains purchase-order."
+    },
+    {
+      "element": "Purchase Order Request plus icon",
+      "suggested_selector": "[aria-label*='create purchase order'], [data-testid*='create-purchase-order'], button.MuiFab-root",
+      "notes": "Typically a bottom-right floating action button."
+    },
+    {
+      "element": "Select Supplier dropdown",
+      "suggested_selector": "[data-testid*='supplier'], [aria-label*='select supplier'], button:has-text('Select Supplier')",
+      "notes": "Opens supplier bottom sheet."
+    },
+    {
+      "element": "Supplier option",
+      "suggested_selector": "bottom-sheet/dialog text matching supplier name",
+      "notes": "Use supplier value vimal traders."
+    }
+  ],
+  "test_data": {
+    "credentials": "Use FMT_PRO_USERNAME and FMT_PRO_PASSWORD from .env, fallback USERNAME/PASSWORD",
+    "product_url": "Use FMT_PRO_URL from .env",
+    "supplier": "vimal traders"
+  },
+  "dependencies": {
+    "requires_login": true,
+    "required_role": "User with Purchase Order access",
+    "prerequisite_features": [
+      "fmt-pro-login"
+    ]
+  }
+}

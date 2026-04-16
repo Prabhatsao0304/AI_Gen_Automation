@@ -1,0 +1,86 @@
+{
+  "feature": "Purchase Order Approval (SHP)",
+  "product": "fmt-os",
+  "version": "1.0",
+  "author": "Automation Team",
+  "created_at": "2026-04-16",
+  "status": "draft",
+  "design": {
+    "description": "Stage-2 PO lifecycle automation in FMT OS where SHP approves a requested PO from Review PO tab and verifies transition to approval pending/map flow.",
+    "url_pattern": "<FMT_OS_URL>/procurement/purchase-order",
+    "entry_points": [
+      "FMT OS Purchase Order screen"
+    ],
+    "ui_components": [
+      "Review PO tab",
+      "Search bar",
+      "PO card/list row",
+      "Approve button",
+      "Approval confirmation dialog",
+      "Map SO tab"
+    ]
+  },
+  "flows": [
+    {
+      "id": "F1",
+      "name": "SHP approves requested PO from Review PO",
+      "tag": "@regression",
+      "priority": "critical",
+      "steps": [
+        "Read SHP_APPROVAL_PO_NUMBER or PO_NUMBER from .env",
+        "Open Review PO tab",
+        "Search by target PO number",
+        "Open matching PO details",
+        "Click Approve",
+        "Confirm approval if dialog appears",
+        "Verify PO is in Approval Pending stage or visible in Map SO"
+      ]
+    }
+  ],
+  "logic": {
+    "business_rules": [
+      "Only requested POs are actionable for SHP approval from Review PO tab.",
+      "Approve action may require a confirmation click.",
+      "Approved PO should transition out of Review PO stage."
+    ],
+    "validations": [
+      "Target PO number is found using exact text match.",
+      "Approve action is triggered successfully.",
+      "Post-approval state is validated by Approval Pending indicator or Map SO visibility."
+    ],
+    "edge_cases": [
+      "Target PO number missing in environment configuration.",
+      "Target PO not visible for SHP role in Review PO list.",
+      "Approval confirmation dialog appears conditionally."
+    ]
+  },
+  "selector_hints": [
+    {
+      "element": "Review PO tab",
+      "suggested_selector": "[role='tab']:has-text('Review PO')",
+      "notes": "Should be active before approval flow."
+    },
+    {
+      "element": "Search bar",
+      "suggested_selector": "input[placeholder='Search by PO#, Supplier Name & ID']",
+      "notes": "Search with target PO number."
+    },
+    {
+      "element": "Approve button",
+      "suggested_selector": "button:has-text('Approve'), [data-testid*='approve']",
+      "notes": "Use visible candidate in details view."
+    }
+  ],
+  "test_data": {
+    "credentials": "Use FMT_OS_USERNAME/FMT_OS_PASSWORD from .env, fallback USERNAME/PASSWORD",
+    "product_url": "Use FMT_OS_URL from .env",
+    "target_po_number": "Use SHP_APPROVAL_PO_NUMBER from .env, fallback PO_NUMBER"
+  },
+  "dependencies": {
+    "requires_login": true,
+    "required_role": "SHP with PO approval access",
+    "prerequisite_features": [
+      "fmt-pro-purchase-order-request"
+    ]
+  }
+}

@@ -5,12 +5,25 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
-const required = ['FMT_OS_URL', 'FMT_PRO_URL', 'USERNAME', 'PASSWORD'];
+const required = ['FMT_OS_URL', 'FMT_PRO_URL'];
 
 for (const key of required) {
   if (!process.env[key]) {
     throw new Error(`Missing required environment variable: ${key}. Check your .env file.`);
   }
+}
+
+function resolveCredentials(productKey) {
+  const username = process.env[`${productKey}_USERNAME`] || process.env.USERNAME;
+  const password = process.env[`${productKey}_PASSWORD`] || process.env.PASSWORD;
+
+  if (!username || !password) {
+    throw new Error(
+      `Missing credentials for ${productKey}. Set ${productKey}_USERNAME/${productKey}_PASSWORD or fallback USERNAME/PASSWORD.`
+    );
+  }
+
+  return { username, password };
 }
 
 const config = {
@@ -25,12 +38,14 @@ const config = {
     },
   },
   credentials: {
-    username: process.env.USERNAME,
-    password: process.env.PASSWORD,
+    'fmt-os': resolveCredentials('FMT_OS'),
+    'fmt-pro': resolveCredentials('FMT_PRO'),
   },
   browser: {
     type: process.env.BROWSER || 'chromium',
     headless: process.env.HEADLESS === 'true',
+    slowMoMs: parseInt(process.env.SLOW_MO_MS || '0', 10),
+    executablePath: process.env.BROWSER_EXECUTABLE_PATH || '',
   },
   timeouts: {
     default: parseInt(process.env.DEFAULT_TIMEOUT || '30000', 10),
