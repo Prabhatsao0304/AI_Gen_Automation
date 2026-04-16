@@ -91,11 +91,7 @@ If the download is blocked on your network, run the same command on a network th
 
 ### Step 5 — Create your local environment file
 
-```bash
-cp .env.example .env
-```
-
-Then open `.env` in your editor and set at least:
+Create a local `.env` file in `automation-framework/`, then set at least:
 
 | Variable | Required | Description |
 |----------|----------|-------------|
@@ -104,6 +100,8 @@ Then open `.env` in your editor and set at least:
 | `USERNAME` | Yes | Google account email used for SSO |
 | `PASSWORD` | Yes | Account password |
 | `SLACK_WEBHOOK_URL` | Yes for default scripts | Slack incoming webhook; after each run the reporter posts results. Without it, `npm run test:*` may still run tests but the Slack step will fail. |
+| `SLACK_BOT_TOKEN` | Optional | Slack bot token used when you want the reporter to post via Slack Web API and upload focused design-mismatch screenshots into the same thread. |
+| `SLACK_CHANNEL_ID` | Optional | Channel ID used together with `SLACK_BOT_TOKEN` for threaded screenshot uploads. |
 | `HEADLESS` | No | `true` / `false` — Google SSO is easiest with `false` |
 | `BROWSER` | No | `chromium` (default), `firefox`, or `webkit` — launch still uses `executablePath` to Chrome on macOS as configured in `world.js` |
 
@@ -124,6 +122,7 @@ What this does:
 3. Uses the **full locator stack** for every step: ordered strategies → self-heal fallbacks → optional page `retryRecovery` where coded → **CDP / accessibility recovery** (on by default; set `RUNTIME_CDP_RECOVERY=false` in `.env` only if you need to disable it). Selector cache + JSON/Markdown reports run unless turned off with `SELECTOR_*` env vars.
 4. Writes reports under `reports/` (HTML + JSON).
 5. Sends a summary to Slack using `SLACK_WEBHOOK_URL`.
+6. If `SLACK_BOT_TOKEN` and `SLACK_CHANNEL_ID` are also set, the reporter uploads the focused design-mismatch screenshots into the same Slack thread.
 
 Other useful commands:
 
@@ -198,7 +197,6 @@ automation-framework/
 │
 ├── reports/                         # Generated (gitignored)
 ├── .env                             # Local only (gitignored)
-├── .env.example
 └── package.json
 ```
 
@@ -209,6 +207,7 @@ automation-framework/
 | Problem | What to try |
 |---------|-------------|
 | `Missing SLACK_WEBHOOK_URL in .env` | Add a valid `SLACK_WEBHOOK_URL` to `.env`, or temporarily point it to a test webhook. The npm scripts always invoke the reporter after Cucumber. |
+| Slack report shows design findings but no screenshots | Add `SLACK_BOT_TOKEN` and `SLACK_CHANNEL_ID` to `.env`. Webhook-only Slack setup can post the report, but focused design-mismatch screenshots are uploaded only through the Slack Web API bot flow. |
 | `Missing required environment variable` | Ensure `FMT_OS_URL`, `FMT_PRO_URL`, `USERNAME`, and `PASSWORD` are set in `.env`. |
 | Browser does not start / wrong Chrome | On macOS the code expects Chrome at `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`. On Windows/Linux, set `executablePath` in `src/hooks/world.js` to your Chrome path. |
 | Google login times out | Use `HEADLESS=false`, run on a stable network, and complete any account prompts manually once if your org requires 2FA (automation may need an app-specific flow for 2FA). |
