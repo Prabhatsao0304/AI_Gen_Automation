@@ -5,6 +5,8 @@ import {
   fillFirstMatching,
   firstMatchingLocator,
 } from '../../../../shared/locators/fallback-locator.js';
+import { bugError } from '../../../../shared/utils/bug-tags.js';
+import { defaultAnyTabStrategies, defaultSearchStrategies } from './empty-screen.strategies.js';
 
 export class TripTrackingPage {
   constructor(page) {
@@ -14,19 +16,11 @@ export class TripTrackingPage {
   }
 
   _searchStrategies() {
-    return [
-      { name: 'type_search', locator: (p) => p.locator('input[type="search"]') },
-      { name: 'role_searchbox', locator: (p) => p.getByRole('searchbox') },
-      { name: 'getByPlaceholder_search', locator: (p) => p.getByPlaceholder(/search/i) },
-      { name: 'first_input', locator: (p) => p.locator('input').first() },
-    ];
+    return defaultSearchStrategies();
   }
 
   _anyTabStrategies() {
-    return [
-      { name: 'role_tab', locator: (p) => p.locator('[role="tab"]') },
-      { name: 'getByRole_tab', locator: (p) => p.getByRole('tab') },
-    ];
+    return defaultAnyTabStrategies();
   }
 
   _tabStrategies(tabName) {
@@ -85,7 +79,7 @@ export class TripTrackingPage {
         perTryTimeouts: [2500, 2500, 2500, 2500, 2500, 2500],
       });
     } catch {
-      throw new Error(`[BUG][EMPTY_SCREEN_TAB_MISSING] Trip Tracking: expected tab "${tabName}" to exist/be clickable.`);
+      throw bugError('EMPTY_SCREEN_TAB_MISSING', `Trip Tracking: expected tab "${tabName}" to exist/be clickable.`);
     }
 
     try {
@@ -95,8 +89,9 @@ export class TripTrackingPage {
         .first()
         .waitFor({ state: 'visible', timeout: 4000 });
     } catch (err) {
-      throw new Error(
-        `[BUG][EMPTY_SCREEN_COPY_MISSING] Trip Tracking "${tabName}" primary text missing/changed. Expected: "${primaryText}".`
+      throw bugError(
+        'EMPTY_SCREEN_COPY_MISSING',
+        `Trip Tracking "${tabName}" primary text missing/changed. Expected: "${primaryText}".`
       );
     }
 
@@ -106,8 +101,9 @@ export class TripTrackingPage {
         .first()
         .waitFor({ state: 'visible', timeout: 4000 });
     } catch (err) {
-      throw new Error(
-        `[BUG][EMPTY_SCREEN_COPY_MISSING] Trip Tracking "${tabName}" supporting text missing/changed. Expected: "${supportingText}".`
+      throw bugError(
+        'EMPTY_SCREEN_COPY_MISSING',
+        `Trip Tracking "${tabName}" supporting text missing/changed. Expected: "${supportingText}".`
       );
     }
   }
