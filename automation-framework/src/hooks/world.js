@@ -91,7 +91,6 @@ async function performGoogleSSO(baseUrl, credentials) {
   const expectedHostname = new URL(baseUrl).hostname;
 
   await page.goto(loginUrl, { waitUntil: 'domcontentloaded' });
-  await page.waitForLoadState('networkidle', { timeout: 2500 }).catch(() => {});
 
   await page.waitForSelector('button:has-text("Sign in")', { timeout: 15000 });
   await page.click('button:has-text("Sign in")');
@@ -117,7 +116,10 @@ async function performGoogleSSO(baseUrl, credentials) {
   if (await emailInput.isVisible({ timeout: 5000 }).catch(() => false)) {
     await emailInput.fill(username);
     await page.locator('#identifierNext, button:has-text("Next")').first().click();
-    await page.waitForTimeout(400);
+    // Wait for password step to appear (avoid fixed sleeps).
+    await page
+      .waitForSelector('input[name="Passwd"], input[type="password"]', { timeout: 15000 })
+      .catch(() => {});
   }
 
   // Enter password
@@ -135,8 +137,8 @@ async function performGoogleSSO(baseUrl, credentials) {
     (url) => url.hostname === expectedHostname && !url.pathname.includes('/login'),
     { timeout: 90000 }
   );
-
-  await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
+  // Keep this lightweight; avoid waiting for full network idle (often noisy in SPAs).
+  await page.waitForLoadState('domcontentloaded', { timeout: 5000 }).catch(() => {});
 }
 
 function buildLoginUrl(baseUrl) {
