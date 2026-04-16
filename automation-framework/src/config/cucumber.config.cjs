@@ -38,10 +38,11 @@ function stepsGlob(productId) {
 }
 
 function reportFormats(baseName) {
+  const effectiveBaseName = process.env.REPORT_BASENAME || baseName;
   return [
     'progress-bar',
-    `html:reports/${baseName}.html`,
-    `json:reports/${baseName}.json`,
+    `html:reports/${effectiveBaseName}.html`,
+    `json:reports/${effectiveBaseName}.json`,
   ];
 }
 

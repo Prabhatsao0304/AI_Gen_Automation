@@ -1,3 +1,5 @@
+import config from '../../../config/env.config.js';
+
 export class PurchaseOrderRequestPage {
   constructor(page) {
     this.page = page;
@@ -39,10 +41,11 @@ export class PurchaseOrderRequestPage {
   }
 
   async assertLoggedInToFmtPro() {
+    const expectedHostname = new URL(config.products['fmt-pro'].baseUrl).hostname;
     await this.page.waitForURL(
       (url) => {
         const parsed = new URL(url.toString());
-        return parsed.hostname.endsWith('farmartos.com') && !parsed.pathname.includes('/login');
+        return parsed.hostname === expectedHostname && !parsed.pathname.includes('/login');
       },
       { timeout: 90000 }
     );

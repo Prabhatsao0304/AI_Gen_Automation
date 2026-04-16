@@ -35,10 +35,21 @@ function runCommand(command, args, extraEnv = {}) {
   });
 }
 
+function inferTestProductFromArgs(args) {
+  const profileIndex = args.findIndex((arg) => arg === '--profile');
+  const profile = profileIndex >= 0 ? args[profileIndex + 1] : '';
+  if (typeof profile !== 'string') return '';
+
+  if (profile.startsWith('fmt-pro')) return 'fmt-pro';
+  if (profile.startsWith('fmt-os')) return 'fmt-os';
+  return '';
+}
+
 const resolvedReportPath = path.resolve(projectRoot, reportPath);
 const designReportPath = resolvedReportPath.replace(/\.json$/i, '.design.json');
 const htmlReportPath = resolvedReportPath.replace(/\.json$/i, '.html');
 const dashboardPath = resolvedReportPath.replace(/\.json$/i, '.dashboard.html');
+const reportBaseName = path.basename(resolvedReportPath).replace(/\.json$/i, '');
 
 for (const artifactPath of [resolvedReportPath, designReportPath, htmlReportPath, dashboardPath]) {
   try {
@@ -53,6 +64,8 @@ const functionalExitCode = await runCommand(
   ['--config', configPath, ...restArgs],
   {
     DESIGN_AUDIT_REPORT_PATH: designReportPath,
+    REPORT_BASENAME: reportBaseName,
+    ...(inferTestProductFromArgs(restArgs) ? { TEST_PRODUCT: inferTestProductFromArgs(restArgs) } : {}),
   }
 );
 

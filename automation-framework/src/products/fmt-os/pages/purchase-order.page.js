@@ -1,9 +1,8 @@
-import { BasePage } from '../../../shared/pages/base.page.js';
 import config from '../../../config/env.config.js';
 
-export class PurchaseOrderPage extends BasePage {
+export class PurchaseOrderPage {
   constructor(page) {
-    super(page);
+    this.page = page;
 
     this.url = `${config.products['fmt-os'].baseUrl}/procurement/purchase-order`;
 
