@@ -3,7 +3,6 @@ import path from 'path';
 import { buildDesignSummary } from '../design/design-report-summary.js';
 
 const [, , functionalReportPath, designReportPath, dashboardPath, suiteName = 'Automation'] = process.argv;
-const SHOW_FLOW_PATTERNS_AI_METADATA = false;
 
 function readJson(filePath) {
   if (!filePath || !fs.existsSync(filePath)) {
@@ -15,29 +14,6 @@ function readJson(filePath) {
   } catch {
     return null;
   }
-}
-
-function stageDashboardEvidence(designReport, outputPath) {
-  const assetDir = path.join(path.dirname(outputPath), 'dashboard-assets');
-  fs.mkdirSync(assetDir, { recursive: true });
-
-  const evidenceMap = new Map();
-  const issueScreenshots = (designReport?.issues || [])
-    .map((issue) => issue?.screenshot_path)
-    .filter(Boolean);
-
-  for (const screenshotPath of [...new Set(issueScreenshots)]) {
-    if (!fs.existsSync(screenshotPath)) {
-      continue;
-    }
-
-    const targetName = path.basename(screenshotPath);
-    const targetPath = path.join(assetDir, targetName);
-    fs.copyFileSync(screenshotPath, targetPath);
-    evidenceMap.set(screenshotPath, `dashboard-assets/${targetName}`);
-  }
-
-  return evidenceMap;
 }
 
 function escapeHtml(value) {
@@ -163,47 +139,13 @@ function buildScoreImprovementChecklist() {
   ];
 }
 
-function formatDictionary(entries = {}, emptyLabel = '—') {
-  const items = Object.entries(entries || {});
-  if (items.length === 0) {
-    return `<span class="pill pill--muted">${escapeHtml(emptyLabel)}</span>`;
-  }
-
-  return items
-    .map(([key, value]) => `<span class="pill"><strong>${escapeHtml(key)}</strong>: ${escapeHtml(value)}</span>`)
-    .join('');
-}
-
-function buildDashboardHtml(functionalReport, designReport, suiteLabel, evidenceMap = new Map()) {
+function buildDashboardHtml(functionalReport, designReport, suiteLabel) {
   const cards = buildMetricCards(functionalReport, designReport);
   const designSummary = buildDesignSummary(designReport);
   const summary = designSummary.summary || {};
   const snapshot = buildAuditSnapshot(functionalReport, designReport);
   const checklist = buildScoreImprovementChecklist();
   const generatedAt = designReport?.generated_at || new Date().toISOString();
-
-  const signalRows = [
-    ['Findings', summary.total_findings ?? 0],
-    ['Audited Scenarios', summary.scenarios_audited ?? 0],
-    ['Component Types Detected', summary.component_types_detected ?? 0],
-    ['Variant Components', summary.variant_components ?? 0],
-    ['Missing Expected Components', summary.missing_expected_components ?? 0],
-    ['Unmapped Components', summary.unmapped_components ?? 0],
-    ['Focused mismatch screenshots', designSummary.screenshotCount],
-  ];
-  const tokenDriftRows = [
-    `Spacing ${designSummary.tokenDrift.spacing}`,
-    `Radius ${designSummary.tokenDrift.radius}`,
-    `Typography ${designSummary.tokenDrift.typography}`,
-  ];
-  const accessibilityRows = [
-    `Unlabeled controls ${designSummary.accessibility.unlabeledControls}`,
-    `Missing alt ${designSummary.accessibility.missingAlt}`,
-  ];
-  const securityRows = [
-    `Link protections ${designSummary.security.linkProtections}`,
-    `Secret exposure ${designSummary.security.secretExposure}`,
-  ];
 
   return `<!doctype html>
 <html lang="en">
@@ -328,29 +270,6 @@ function buildDashboardHtml(functionalReport, designReport, suiteLabel, evidence
     .checklist li + li {
       margin-top: 8px;
     }
-    .info-grid {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 12px 24px;
-      margin-bottom: 18px;
-    }
-    .info-item {
-      padding: 12px 0;
-      border-bottom: 1px solid #edf2f8;
-    }
-    .info-label {
-      display: block;
-      color: var(--muted);
-      font-size: 13px;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      margin-bottom: 4px;
-    }
-    .info-value {
-      font-size: 24px;
-      font-weight: 700;
-      color: var(--text);
-    }
     .card {
       padding: 18px;
     }
@@ -424,27 +343,6 @@ function buildDashboardHtml(functionalReport, designReport, suiteLabel, evidence
       position: sticky;
       top: 0;
     }
-    .mini-grid {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 14px;
-    }
-    .mini-card {
-      border: 1px solid #edf2f8;
-      border-radius: 12px;
-      background: #fbfdff;
-      padding: 14px;
-    }
-    .mini-card h3 {
-      margin: 0 0 8px;
-      font-size: 16px;
-    }
-    .list {
-      margin: 0;
-      padding-left: 18px;
-      color: var(--muted);
-      line-height: 1.6;
-    }
     .details-list {
       margin: 0;
       padding-left: 22px;
@@ -458,42 +356,6 @@ function buildDashboardHtml(functionalReport, designReport, suiteLabel, evidence
     .muted-text {
       color: var(--muted);
     }
-    .evidence-list {
-      display: grid;
-      gap: 16px;
-    }
-    .evidence-card {
-      display: grid;
-      grid-template-columns: minmax(280px, 420px) 1fr;
-      gap: 18px;
-      align-items: start;
-      border: 1px solid #e4edf6;
-      border-radius: 16px;
-      background: #fbfdff;
-      padding: 16px;
-    }
-    .evidence-card img {
-      width: 100%;
-      border-radius: 12px;
-      border: 1px solid #e4edf6;
-      background: #f3f6fa;
-      object-fit: cover;
-    }
-    .evidence-card h3 {
-      margin: 0 0 8px;
-      font-size: 18px;
-    }
-    .evidence-meta {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-      margin: 0 0 12px;
-    }
-    .evidence-text p {
-      margin: 0 0 10px;
-      color: var(--muted);
-      line-height: 1.6;
-    }
     @media (max-width: 1100px) {
       .grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -504,15 +366,6 @@ function buildDashboardHtml(functionalReport, designReport, suiteLabel, evidence
         grid-template-columns: 1fr;
       }
       .snapshot-grid {
-        grid-template-columns: 1fr;
-      }
-      .info-grid {
-        grid-template-columns: 1fr;
-      }
-      .mini-grid {
-        grid-template-columns: 1fr;
-      }
-      .evidence-card {
         grid-template-columns: 1fr;
       }
     }
@@ -622,63 +475,6 @@ function buildDashboardHtml(functionalReport, designReport, suiteLabel, evidence
         </div>
       </details>
     </section>
-
-    ${SHOW_FLOW_PATTERNS_AI_METADATA
-      ? `
-    <section class="section">
-      <details class="details">
-        <summary>Flow, Patterns, AI Insights, and Metadata</summary>
-        <div class="details-body mini-grid">
-          <div class="mini-card">
-            <h3>Pattern Validation</h3>
-            <ul class="list">
-              ${(designReport?.pattern_validation || [])
-                .map(
-                  (item) => `
-                    <li><strong>${escapeHtml(item.pattern)}</strong>: ${escapeHtml(item.status || item.issue || '')}</li>
-                  `
-                )
-                .join('') || '<li>No pattern validation data.</li>'}
-            </ul>
-          </div>
-
-          <div class="mini-card">
-            <h3>Flow Integrity</h3>
-            <ul class="list">
-              ${(designReport?.flow_integrity || [])
-                .map(
-                  (item) => `
-                    <li><strong>${escapeHtml(item.scenario || item.flow)}</strong>: ${escapeHtml(item.design_audit_status || item.issue || item.functional_status || '')}</li>
-                  `
-                )
-                .join('') || '<li>No flow integrity data.</li>'}
-            </ul>
-          </div>
-
-          <div class="mini-card">
-            <h3>AI Insights</h3>
-            <ul class="list">
-              <li>${escapeHtml(designReport?.ai_insights?.summary || designReport?.ai_insights?.primary_risk || 'No AI summary available.')}</li>
-              ${((designReport?.ai_insights?.top_recommendations || designReport?.ai_insights?.highest_priority_actions || []).map(
-                (item) => `<li>${escapeHtml(item)}</li>`
-              ).join(''))}
-            </ul>
-          </div>
-
-          <div class="mini-card">
-            <h3>Metadata</h3>
-            <ul class="list">
-              <li>Run ID: ${escapeHtml(designReport?.metadata?.run_id || '—')}</li>
-              <li>Timestamp: ${escapeHtml(designReport?.metadata?.timestamp || designReport?.metadata?.generated_at || generatedAt)}</li>
-              <li>Ruleset: ${escapeHtml(designReport?.metadata?.ruleset || 'CCL shared')}</li>
-              <li>Audit mode: ${escapeHtml(designReport?.metadata?.audit_mode || 'non-blocking')}</li>
-            </ul>
-          </div>
-        </div>
-      </details>
-    </section>`
-      : ''}
-
     <section class="section">
       <h2>Score Improvement Checklist</h2>
       <ol class="checklist">
@@ -698,8 +494,7 @@ function generateDashboard(functionalPath, designPath, outputPath, suiteLabel) {
   }
 
   fs.mkdirSync(path.dirname(outputPath), { recursive: true });
-  const evidenceMap = stageDashboardEvidence(designReport, outputPath);
-  fs.writeFileSync(outputPath, buildDashboardHtml(functionalReport, designReport, suiteLabel, evidenceMap));
+  fs.writeFileSync(outputPath, buildDashboardHtml(functionalReport, designReport, suiteLabel));
   return true;
 }
 

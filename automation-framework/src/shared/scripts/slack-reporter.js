@@ -22,7 +22,6 @@ const projectRoot = path.resolve(__dirname, '../../..');
 const WEBHOOK_URL = process.env.SLACK_WEBHOOK_URL;
 const SLACK_BOT_TOKEN = process.env.SLACK_BOT_TOKEN;
 const SLACK_CHANNEL_ID = process.env.SLACK_CHANNEL_ID;
-const SHOW_DETAILED_DESIGN_SLACK_SECTION = false;
 const [, , reportPath, suiteName = 'Automation', designAuditPath] = process.argv;
 
 const resolveProjectPath = (inputPath) => {
@@ -228,16 +227,6 @@ function summarizeComponentAnalysis(designAudit) {
     .slice(0, 12);
 }
 
-function formatComponentNames(names = [], emptyLabel = '—', limit = 20) {
-  if (!Array.isArray(names) || names.length === 0) {
-    return emptyLabel;
-  }
-
-  const visibleNames = names.slice(0, limit);
-  const suffix = names.length > limit ? `  •  +${names.length - limit} more` : '';
-  return `${visibleNames.join('  •  ')}${suffix}`;
-}
-
 function collectDesignEvidenceFiles(designAudit, limit = 10) {
   const evidenceFiles = [];
   const seenPaths = new Set();
@@ -366,11 +355,10 @@ async function uploadFileToSlackChannel({ filePath, title, initialComment, threa
   });
 }
 
-function buildPayload(stats, suiteName, designAudit, designReportState = {}, selfHealFallbacks = 0, selectorEvents = []) {
+function buildPayload(stats, suiteName, designAudit, selfHealFallbacks = 0, selectorEvents = []) {
   const allPassed = stats.failed === 0;
   const now = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
   const summary = designAudit?.summary || {};
-  const auditSummary = designAudit?.audit_summary || {};
   const designSummaryState = buildDesignSummary(designAudit);
   const componentRows = summarizeComponentAnalysis(designAudit);
 
@@ -496,65 +484,6 @@ function buildPayload(stats, suiteName, designAudit, designReportState = {}, sel
     },
   });
 
-  const categorySummary = Object.entries(summary.by_category || {})
-    .map(([name, count]) => `${name}: ${count}`)
-    .join('  •  ');
-  const severitySummary = Object.entries(summary.by_severity || {})
-    .map(([name, count]) => `${name}: ${count}`)
-    .join('  •  ');
-
-  if (SHOW_DETAILED_DESIGN_SLACK_SECTION) {
-    blocks.push({
-      type: 'section',
-      fields: [
-        { type: 'mrkdwn', text: `*Findings*\n${summary.total_findings ?? 0}` },
-        { type: 'mrkdwn', text: `*Audited Scenarios*\n${summary.scenarios_audited ?? 0}` },
-        { type: 'mrkdwn', text: `*Categories*\n${categorySummary || '—'}` },
-        { type: 'mrkdwn', text: `*Severity*\n${severitySummary || '—'}` },
-      ],
-    });
-
-    blocks.push({
-      type: 'section',
-      fields: [
-        { type: 'mrkdwn', text: `*Component Types Detected*\n${summary.component_types_detected ?? 0}` },
-        { type: 'mrkdwn', text: `*Variant Components*\n${summary.variant_components ?? 0}` },
-        { type: 'mrkdwn', text: `*Missing Expected Components*\n${summary.missing_expected_components ?? 0}` },
-        { type: 'mrkdwn', text: `*Unmapped Components*\n${summary.unmapped_components ?? 0}` },
-      ],
-    });
-
-    blocks.push({
-      type: 'section',
-      fields: [
-        {
-          type: 'mrkdwn',
-          text: `*Token Drift*\nSpacing ${designSummaryState.tokenDrift.spacing}  •  Radius ${designSummaryState.tokenDrift.radius}  •  Typography ${designSummaryState.tokenDrift.typography}`,
-        },
-        {
-          type: 'mrkdwn',
-          text: `*Accessibility*\nUnlabeled controls ${designSummaryState.accessibility.unlabeledControls}  •  Missing alt ${designSummaryState.accessibility.missingAlt}`,
-        },
-        {
-          type: 'mrkdwn',
-          text: `*Security Signals*\nLink protections ${designSummaryState.security.linkProtections}  •  Secret exposure ${designSummaryState.security.secretExposure}`,
-        },
-      ],
-    });
-
-    blocks.push({
-      type: 'section',
-      text: {
-        type: 'mrkdwn',
-        text: designReportState.evidence_count > 0
-          ? designReportState.slack_image_upload_enabled
-            ? `*Focused mismatch screenshots*\n${designReportState.evidence_count} screenshot(s) will be attached in this Slack thread for the mismatched design findings.`
-            : '*Focused mismatch screenshots*\nCaptured for the design report, but not attached here because this run is using webhook-only Slack config. Add `SLACK_BOT_TOKEN` and `SLACK_CHANNEL_ID` to attach the focused mismatch screenshots in Slack.'
-          : '*Focused mismatch screenshots*\nNo focused mismatch screenshots were generated in this run.',
-      },
-    });
-  }
-
   const componentTable = [
     '```',
     'Component          | Count   | Match      | Library',
@@ -592,18 +521,12 @@ const designAudit = parseDesignAudit(resolvedDesignAuditPath);
 const selfHealFallbacks = countSelfHealDriftEvents();
 const selectorEvents = loadSelectorResolutionReport();
 const designEvidenceFiles = collectDesignEvidenceFiles(designAudit);
-const designReportState = {
-  path: resolvedDesignAuditPath,
-  found: Boolean(designAudit?.summary),
-  slack_image_upload_enabled: Boolean(SLACK_BOT_TOKEN && SLACK_CHANNEL_ID),
-  evidence_count: designEvidenceFiles.length,
-};
 
 if (!designAudit && resolvedDesignAuditPath) {
   console.warn(`Design report not found or invalid: ${resolvedDesignAuditPath}`);
 }
 
-const payload = buildPayload(stats, suiteName, designAudit, designReportState, selfHealFallbacks, selectorEvents);
+const payload = buildPayload(stats, suiteName, designAudit, selfHealFallbacks, selectorEvents);
 let threadTs = null;
 let usedWebhookFallback = false;
 

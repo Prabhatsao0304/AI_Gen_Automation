@@ -2,15 +2,6 @@ function safeArray(value) {
   return Array.isArray(value) ? value : [];
 }
 
-function countBy(items = [], key) {
-  return items.reduce((acc, item) => {
-    const bucket = item?.[key];
-    if (!bucket) return acc;
-    acc[bucket] = (acc[bucket] || 0) + 1;
-    return acc;
-  }, {});
-}
-
 function countIssueTitles(findings = []) {
   return findings.reduce((acc, finding) => {
     const title = String(finding?.title || '').trim();
@@ -50,18 +41,11 @@ export function buildDesignSummary(designReport = {}) {
   const findings = collectFindings(designReport);
   const titleCounts = countIssueTitles(findings);
   const screenshotPaths = collectScreenshotPaths(findings);
-  const byCategory = Object.keys(summary.by_category || {}).length > 0
-    ? summary.by_category
-    : countBy(findings, 'category');
-  const bySeverity = Object.keys(summary.by_severity || {}).length > 0
-    ? summary.by_severity
-    : countBy(findings, 'severity');
+  const bySeverity = summary.by_severity || {};
 
   return {
     summary,
     findings,
-    byCategory,
-    bySeverity,
     releaseRisk: computeReleaseRisk({ ...summary, by_severity: bySeverity }),
     screenshotCount: screenshotPaths.length,
     screenshotPaths,
@@ -80,4 +64,3 @@ export function buildDesignSummary(designReport = {}) {
     },
   };
 }
-
