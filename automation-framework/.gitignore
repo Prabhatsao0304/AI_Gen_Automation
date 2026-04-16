@@ -1,7 +1,8 @@
 node_modules/
 reports/
-screenshots/
 .auth/
 .env
+# Local learned preferred strategies (optional team share — remove this line if you commit overrides)
+config/selector-overrides.json
 *.log
 .DS_Store
