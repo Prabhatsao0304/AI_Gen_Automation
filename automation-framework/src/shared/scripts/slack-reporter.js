@@ -75,6 +75,7 @@ function parseReport(filePath) {
         durationSec: '0.0',
         passRate: 0,
         failures: [],
+        modules: [],
       };
     }
 
@@ -87,10 +88,20 @@ function parseReport(filePath) {
     let failedSteps = 0;
     let totalDurationNs = 0;
     const failures = [];
+    const modulesMap = new Map();
+    const bugTypeCounts = new Map();
 
     for (const feature of features) {
+      const featureName = feature?.name || 'Unnamed feature';
+      const scenarios = feature?.elements || [];
+      if (!modulesMap.has(featureName)) {
+        modulesMap.set(featureName, { feature: featureName, scenarios: 0, failed: 0 });
+      }
+      const mod = modulesMap.get(featureName);
+
       for (const scenario of feature.elements || []) {
         totalScenarios += 1;
+        mod.scenarios += 1;
         let scenarioFailed = false;
 
         for (const step of scenario.steps || []) {
@@ -102,15 +113,22 @@ function parseReport(filePath) {
           } else if (step.result?.status === 'failed') {
             failedSteps += 1;
             scenarioFailed = true;
+            const firstLine = (step.result?.error_message || '').split('\n')[0].trim();
+            const bugMatch = firstLine.match(/^\[BUG\]\[([A-Z0-9_]+)\]\s+/);
+            if (bugMatch?.[1]) {
+              const k = bugMatch[1];
+              bugTypeCounts.set(k, (bugTypeCounts.get(k) || 0) + 1);
+            }
             failures.push({
               feature: feature.name,
               scenario: scenario.name,
               step: step.name,
-              error: (step.result?.error_message || '').split('\n')[0].trim().slice(0, 120),
+              error: firstLine.slice(0, 160),
             });
           }
         }
 
+        if (scenarioFailed) mod.failed += 1;
         scenarioFailed ? failed++ : passed++;
       }
     }
@@ -125,6 +143,12 @@ function parseReport(filePath) {
       durationSec: (totalDurationNs / 1e9).toFixed(1),
       passRate: totalScenarios > 0 ? Math.round((passed / totalScenarios) * 100) : 0,
       failures,
+      modules: Array.from(modulesMap.values())
+        .sort((a, b) => b.scenarios - a.scenarios)
+        .slice(0, 12),
+      bugTypes: Array.from(bugTypeCounts.entries())
+        .map(([type, count]) => ({ type, count }))
+        .sort((a, b) => b.count - a.count),
     };
   } catch (error) {
     return {
@@ -144,6 +168,8 @@ function parseReport(filePath) {
           error: `Unable to parse JSON report. ${String(error?.message || error).slice(0, 120)}`,
         },
       ],
+      modules: [],
+      bugTypes: [],
     };
   }
 }
@@ -361,6 +387,31 @@ function buildPayload(stats, suiteName, designAudit, designReportState = {}, sel
     },
     { type: 'divider' },
   ];
+
+  if (Array.isArray(stats.modules) && stats.modules.length > 0) {
+    const lines = stats.modules.map((m) => {
+      const status = m.failed > 0 ? `❌ ${m.failed}` : '✅ 0';
+      return `• *${m.feature}* — ${m.scenarios} scenario(s) (${status} failed)`;
+    });
+    blocks.push({
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: `*Modules run*\n${lines.join('\n')}`,
+      },
+    });
+  }
+
+  if (Array.isArray(stats.bugTypes) && stats.bugTypes.length > 0) {
+    const rows = stats.bugTypes.slice(0, 8).map((b) => `• *${b.type}*: ${b.count}`);
+    blocks.push({
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: `*Bug classification (from failures)*\n${rows.join('\n')}`,
+      },
+    });
+  }
 
   if (selfHealFallbacks > 0) {
     const driftRel = path.relative(process.cwd(), getSelfHealDriftLogPath()) || 'self-heal-events.jsonl';
