@@ -115,7 +115,6 @@ function buildAuditSnapshot(functionalReport, designReport) {
     ['Run Time', `${summary.runtime_sec ?? 0}s`],
     ['Total Findings', summary.total_findings ?? 0],
     ['Audited Scenarios', summary.scenarios_audited ?? functionalStats.totalScenarios ?? 0],
-    ['Release Risk', designSummary.releaseRisk],
     ['Evidence Screenshots', designSummary.screenshotCount],
   ];
 }

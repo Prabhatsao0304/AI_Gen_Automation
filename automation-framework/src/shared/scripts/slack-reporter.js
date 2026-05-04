@@ -87,6 +87,8 @@ function parseReport(filePath) {
     let totalSteps = 0;
     let passedSteps = 0;
     let failedSteps = 0;
+    let skippedSteps = 0;
+    let otherSteps = 0;
     let totalDurationNs = 0;
     const failures = [];
     const modulesMap = new Map();
@@ -106,6 +108,10 @@ function parseReport(filePath) {
         let scenarioFailed = false;
 
         for (const step of scenario.steps || []) {
+          // Ignore hidden hook steps (Before/After) so totals match user-visible steps.
+          if (step?.hidden) {
+            continue;
+          }
           totalSteps += 1;
           totalDurationNs += step.result?.duration || 0;
 
@@ -126,6 +132,10 @@ function parseReport(filePath) {
               step: step.name,
               error: firstLine.slice(0, 160),
             });
+          } else if (step.result?.status === 'skipped') {
+            skippedSteps += 1;
+          } else {
+            otherSteps += 1;
           }
         }
 
@@ -141,12 +151,13 @@ function parseReport(filePath) {
       totalSteps,
       passedSteps,
       failedSteps,
+      skippedSteps,
+      otherSteps,
       durationSec: (totalDurationNs / 1e9).toFixed(1),
       passRate: totalScenarios > 0 ? Math.round((passed / totalScenarios) * 100) : 0,
       failures,
-      modules: Array.from(modulesMap.values())
-        .sort((a, b) => b.scenarios - a.scenarios)
-        .slice(0, 12),
+      // Keep the full module list; Slack rendering decides how to truncate while always including failures.
+      modules: Array.from(modulesMap.values()).sort((a, b) => b.scenarios - a.scenarios),
       bugTypes: Array.from(bugTypeCounts.entries())
         .map(([type, count]) => ({ type, count }))
         .sort((a, b) => b.count - a.count),
@@ -159,6 +170,8 @@ function parseReport(filePath) {
       totalSteps: 0,
       passedSteps: 0,
       failedSteps: 0,
+      skippedSteps: 0,
+      otherSteps: 0,
       durationSec: '0.0',
       passRate: 0,
       failures: [
@@ -258,7 +271,38 @@ function collectDesignEvidenceFiles(designAudit, limit = 10) {
 
 function buildDashboardUrl(reportFilePath) {
   const dashboardFile = path.basename(String(reportFilePath || '').replace(/\.json$/i, '.dashboard.html'));
-  return `http://127.0.0.1:4173/${dashboardFile}`;
+  return `http://localhost:4173/${dashboardFile}`;
+}
+
+function appendDesignEvidenceNote(payload, designEvidenceFiles, reason) {
+  if (!payload?.attachments?.[0]?.blocks || !Array.isArray(designEvidenceFiles) || designEvidenceFiles.length === 0) {
+    return payload;
+  }
+
+  const blocks = payload.attachments[0].blocks;
+  const relPaths = designEvidenceFiles
+    .slice(0, 8)
+    .map((f) => `• \`${path.relative(process.cwd(), f.filePath)}\``);
+
+  blocks.push({ type: 'divider' });
+  blocks.push({
+    type: 'section',
+    text: {
+      type: 'mrkdwn',
+      text: [
+        '*📎 Design evidence screenshots*',
+        reason ? `_Upload status_: ${reason}` : null,
+        relPaths.length ? relPaths.join('\n') : null,
+        designEvidenceFiles.length > relPaths.length
+          ? `… and ${designEvidenceFiles.length - relPaths.length} more`
+          : null,
+      ]
+        .filter(Boolean)
+        .join('\n'),
+    },
+  });
+
+  return payload;
 }
 
 async function slackApiCall(method, body, options = {}) {
@@ -360,7 +404,6 @@ function buildPayload(stats, suiteName, designAudit, selfHealFallbacks = 0, sele
   const now = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
   const summary = designAudit?.summary || {};
   const designSummaryState = buildDesignSummary(designAudit);
-  const componentRows = summarizeComponentAnalysis(designAudit);
 
   const blocks = [
     {
@@ -377,7 +420,15 @@ function buildPayload(stats, suiteName, designAudit, selfHealFallbacks = 0, sele
         { type: 'mrkdwn', text: `*Status*\n${allPassed ? 'ALL PASSED' : 'SOME FAILED'}` },
         { type: 'mrkdwn', text: `*Pass Rate*\n${stats.passRate}%` },
         { type: 'mrkdwn', text: `*Scenarios*\n✅ ${stats.passed}  ❌ ${stats.failed}  📋 ${stats.totalScenarios} total` },
-        { type: 'mrkdwn', text: `*Steps*\n✅ ${stats.passedSteps}  ❌ ${stats.failedSteps}  📋 ${stats.totalSteps} total` },
+        {
+          type: 'mrkdwn',
+          text:
+            `*Steps*` +
+            `\n✅ ${stats.passedSteps}  ❌ ${stats.failedSteps}` +
+            (typeof stats.skippedSteps === 'number' ? `  ⏭️ ${stats.skippedSteps}` : '') +
+            (typeof stats.otherSteps === 'number' && stats.otherSteps > 0 ? `  ❔ ${stats.otherSteps}` : '') +
+            `  📋 ${stats.totalSteps} total`,
+        },
         { type: 'mrkdwn', text: `*Duration*\n⏱ ${stats.durationSec}s` },
         { type: 'mrkdwn', text: `*Run At*\n🕐 ${now} IST` },
       ],
@@ -386,10 +437,28 @@ function buildPayload(stats, suiteName, designAudit, selfHealFallbacks = 0, sele
   ];
 
   if (Array.isArray(stats.modules) && stats.modules.length > 0) {
-    const lines = stats.modules.map((m) => {
+    const all = stats.modules;
+    const failedMods = all.filter((m) => (m.failed || 0) > 0);
+    const passedMods = all.filter((m) => (m.failed || 0) === 0);
+
+    failedMods.sort((a, b) => (b.failed - a.failed) || (b.scenarios - a.scenarios));
+    passedMods.sort((a, b) => (b.scenarios - a.scenarios) || a.feature.localeCompare(b.feature));
+
+    const MAX_LINES = 12;
+    const included = [
+      ...failedMods,
+      ...passedMods.slice(0, Math.max(0, MAX_LINES - failedMods.length)),
+    ];
+
+    const lines = included.map((m) => {
       const status = m.failed > 0 ? `❌ ${m.failed}` : '✅ 0';
       return `• *${m.feature}* — ${m.scenarios} scenario(s) (${status} failed)`;
     });
+
+    if (included.length < all.length) {
+      const remaining = all.length - included.length;
+      lines.push(`• _…and ${remaining} more passing module(s)_`);
+    }
     blocks.push({
       type: 'section',
       text: {
@@ -424,17 +493,47 @@ function buildPayload(stats, suiteName, designAudit, selfHealFallbacks = 0, sele
   }
 
   if (selectorEvents.length > 0) {
-    const reportRel = path.relative(process.cwd(), getSelectorReportPath()) || 'selector-resolution-report.json';
-    const summaryRel = path.relative(process.cwd(), getSelectorSummaryPath()) || 'selector-intelligence-summary.md';
     const fallbackCount = selectorEvents.filter((event) => event.fallbackUsed).length;
     const cacheReorderCount = selectorEvents.filter((event) => event.reorderedFromCache).length;
+    const explanationLines = [
+      'Tracks which locator strategy actually worked at runtime so the suite stays stable when UI changes.',
+      `• *Fallback* = primary locator failed and a secondary strategy was used (${fallbackCount}).`,
+      `• *Cache reorder* = locator order was optimized from previous runs to try the most likely winner first (${cacheReorderCount}).`,
+    ];
+
+    const topLocations = selectorEvents
+      .slice()
+      .reverse()
+      .filter((e) => e?.context && e?.url)
+      .filter((e, idx, arr) => {
+        const key = `${e.context}@@${e.url}@@${e.resolvedStrategy}`;
+        return arr.findIndex((x) => `${x.context}@@${x.url}@@${x.resolvedStrategy}` === key) === idx;
+      })
+      .slice(0, 8)
+      .map((e) => {
+        const tags = [
+          e.fallbackUsed ? 'fallback' : null,
+          e.reorderedFromCache ? 'cache reorder' : null,
+          e.cdpRecovery ? 'cdp' : null,
+        ].filter(Boolean);
+        const where = (() => {
+          try {
+            const u = new URL(e.url);
+            return `${u.pathname}${u.search || ''}`;
+          } catch {
+            return e.url;
+          }
+        })();
+        return `• *${e.context}* → \`${e.resolvedStrategy}\`${tags.length ? ` (${tags.join(', ')})` : ''}\n  _${where}_`;
+      });
+
     blocks.push({
       type: 'section',
       text: {
         type: 'mrkdwn',
         text:
-          `*Selector intelligence*\nEvents: *${selectorEvents.length}* (fallback: *${fallbackCount}*, cache reorder: *${cacheReorderCount}*).\n` +
-          `_Artifacts: \`${reportRel}\`, \`${summaryRel}\`_`,
+          `*Selector intelligence*\n${explanationLines.join('\n')}\n` +
+          `*Where it was used (screen + element context):*\n${topLocations.join('\n')}`,
       },
     });
   }
@@ -471,7 +570,6 @@ function buildPayload(stats, suiteName, designAudit, selfHealFallbacks = 0, sele
       { type: 'mrkdwn', text: `*Run Time*\n${summary.runtime_sec ?? 0}s` },
       { type: 'mrkdwn', text: `*Total Findings*\n${summary.total_findings ?? 0}` },
       { type: 'mrkdwn', text: `*Audited Scenarios*\n${summary.scenarios_audited ?? 0}` },
-      { type: 'mrkdwn', text: `*Release Risk*\n${designSummaryState.releaseRisk}` },
       { type: 'mrkdwn', text: `*Evidence Screenshots*\n${designSummaryState.screenshotCount}` },
     ],
   });
@@ -481,29 +579,6 @@ function buildPayload(stats, suiteName, designAudit, selfHealFallbacks = 0, sele
     text: {
       type: 'mrkdwn',
       text: `*Dashboard URL*\n${buildDashboardUrl(resolvedReportPath)}`,
-    },
-  });
-
-  const componentTable = [
-    '```',
-    'Component          | Count   | Match      | Library',
-    '-------------------|---------|------------|------------------------',
-    ...componentRows.map((component) =>
-      [
-        String(component.component_name).padEnd(18, ' ').slice(0, 18),
-        String(component.instance_count).padStart(5, ' '),
-        String(component.match_status).padEnd(10, ' ').slice(0, 10),
-        String(component.storybook_status).slice(0, 24),
-      ].join(' | ')
-    ),
-    '```',
-  ].join('\n');
-
-  blocks.push({
-    type: 'section',
-    text: {
-      type: 'mrkdwn',
-      text: `*Component Analysis*\n${componentTable}`,
     },
   });
 
@@ -541,10 +616,17 @@ if (SLACK_BOT_TOKEN && SLACK_CHANNEL_ID) {
 
     console.warn(`Slack bot delivery failed, falling back to webhook-only report: ${error.message}`);
     usedWebhookFallback = true;
-    await postMessageWithWebhook(payload);
+    await postMessageWithWebhook(
+      appendDesignEvidenceNote(
+        payload,
+        designEvidenceFiles,
+        'Unable to upload screenshots (bot message failed; webhook fallback cannot upload files).'
+      )
+    );
   }
 
-  if (designEvidenceFiles.length > 0) {
+  // If we fell back to webhook, bot API calls are likely unavailable; avoid noisy upload attempts.
+  if (!usedWebhookFallback && designEvidenceFiles.length > 0) {
     for (const evidenceFile of designEvidenceFiles) {
       try {
         await uploadFileToSlackChannel({
@@ -567,9 +649,19 @@ if (SLACK_BOT_TOKEN && SLACK_CHANNEL_ID) {
         );
       }
     }
+  } else if (usedWebhookFallback && designEvidenceFiles.length > 0) {
+    console.warn(
+      'Design mismatch screenshots were not uploaded to Slack because bot delivery failed and webhook fallback does not support file uploads.'
+    );
   }
 } else {
-  await postMessageWithWebhook(payload);
+  await postMessageWithWebhook(
+    appendDesignEvidenceNote(
+      payload,
+      designEvidenceFiles,
+      'Not uploaded (missing SLACK_BOT_TOKEN/SLACK_CHANNEL_ID; webhooks cannot upload files).'
+    )
+  );
   if (designEvidenceFiles.length > 0) {
     console.warn(
       'Design mismatch screenshots were not uploaded to Slack. Add SLACK_BOT_TOKEN and SLACK_CHANNEL_ID to enable threaded screenshot uploads.'

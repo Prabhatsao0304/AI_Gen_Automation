@@ -310,10 +310,6 @@ ${START_MARKER}
       <div class="codex-design-report__value">${escapeHtml(summary.scenarios_audited ?? 0)}</div>
     </div>
     <div class="codex-design-report__card">
-      <span class="codex-design-report__label">Release Risk</span>
-      <div class="codex-design-report__value">${escapeHtml(findingSummary.releaseRisk)}</div>
-    </div>
-    <div class="codex-design-report__card">
       <span class="codex-design-report__label">Evidence Screenshots</span>
       <div class="codex-design-report__value">${escapeHtml(findingSummary.screenshotCount)}</div>
     </div>

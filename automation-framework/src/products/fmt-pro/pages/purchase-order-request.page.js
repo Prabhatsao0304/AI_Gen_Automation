@@ -16,10 +16,12 @@ export class PurchaseOrderRequestPage {
       'aside a:has-text("Purchase Order")',
       'aside a:has-text("Purchase Orders")',
       'a[href*="purchase-order" i]',
+      'a[href*="purchase" i]',
       '[data-testid*="purchase-order"]',
+      '[data-testid*="purchaseOrder" i]',
       '[aria-label*="Purchase Order"]',
       '[aria-label*="purchase order" i]',
-      'text=/purchase\\s*orders?/i',
+      'text=/purchase\\s*order/i',
     ];
     this.createPurchaseOrderPlusIconSelectors = [
       '[aria-label*="create purchase order" i]',
@@ -63,16 +65,9 @@ export class PurchaseOrderRequestPage {
   }
 
   async clickPurchaseOrderBottomTab() {
-    // Direct navigation is faster + more stable than clicking a UI tab that may move/rename.
-    const lowerUrl = this.page.url().toLowerCase();
-    if (!lowerUrl.includes('/purchase-order')) {
-      const parsed = new URL(config.products['fmt-pro'].baseUrl);
-      parsed.pathname = '/purchase-order';
-      parsed.search = 'tab_id=1';
-      await this.page.goto(parsed.toString(), { waitUntil: 'domcontentloaded' });
-    }
-
-    await this.waitForUiSettle({ idleTimeout: 1800, minPause: 0 });
+    const purchaseOrderTab = await this.findVisibleElement(this.purchaseOrderBottomTabSelectors, 'Purchase Order bottom tab');
+    await purchaseOrderTab.click();
+    await this.waitForUiSettle({ idleTimeout: 1800, minPause: 80 });
   }
 
   async assertPurchaseOrderScreenVisible() {
